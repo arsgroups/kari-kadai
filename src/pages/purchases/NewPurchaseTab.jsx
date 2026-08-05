@@ -1,21 +1,20 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { toISODate } from '../../lib/format'
+import { fetchRateHistory, buildRateResolver, round2 } from '../../lib/gst'
+import { toISODate, formatMoney } from '../../lib/format'
 
 const emptyForm = {
   date: toISODate(),
   supplier_id: '',
-  product_id: '',
-  quantity: '',
-  cost_price: '',
-  payment_type: 'Cash',
+  amount_before_gst: '',
   gst_applicable: true,
+  payment_type: 'Cash',
   note: '',
 }
 
 export default function NewPurchaseTab() {
   const [suppliers, setSuppliers] = useState([])
-  const [products, setProducts] = useState([])
+  const [getRate, setGetRate] = useState(() => () => 9)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -28,15 +27,13 @@ export default function NewPurchaseTab() {
       .eq('is_active', true)
       .order('name')
       .then(({ data }) => setSuppliers(data ?? []))
-    supabase
-      .from('products')
-      .select('id, name, unit')
-      .eq('is_active', true)
-      .order('name')
-      .then(({ data }) => setProducts(data ?? []))
+    fetchRateHistory().then((rates) => setGetRate(() => buildRateResolver(rates)))
   }, [])
 
-  const total = (Number(form.quantity) || 0) * (Number(form.cost_price) || 0)
+  const amountBeforeGst = Number(form.amount_before_gst) || 0
+  const rate = getRate(form.date)
+  const gstAmount = form.gst_applicable ? round2(amountBeforeGst * (rate / 100)) : 0
+  const total = round2(amountBeforeGst + gstAmount)
 
   function handleSupplierChange(supplierId) {
     const supplier = suppliers.find((s) => s.id === supplierId)
@@ -52,12 +49,11 @@ export default function NewPurchaseTab() {
     const { error: purchaseError } = await supabase.from('purchases').insert({
       date: form.date,
       supplier_id: form.supplier_id,
-      product_id: form.product_id,
-      quantity: Number(form.quantity),
-      cost_price: Number(form.cost_price),
+      amount_before_gst: amountBeforeGst,
+      gst_amount: gstAmount,
+      gst_applicable: form.gst_applicable,
       payment_type: form.payment_type,
       source: 'manual',
-      gst_applicable: form.gst_applicable,
       note: form.note || null,
     })
 
@@ -67,14 +63,17 @@ export default function NewPurchaseTab() {
       return
     }
 
-    // Stock movement is written automatically by a database trigger (see supabase/schema.sql).
-    setSuccess(`Purchase recorded — total S$${total.toFixed(2)}`)
+    setSuccess(`Purchase recorded — total S$${total.toFixed(2)} (S$${amountBeforeGst.toFixed(2)} + S$${gstAmount.toFixed(2)} GST)`)
     setForm({ ...emptyForm, date: form.date })
   }
 
   return (
     <div className="card">
       <h3>New Purchase</h3>
+      <p className="muted" style={{ fontSize: '0.85rem', marginTop: '-0.5rem' }}>
+        Enter the bill amount before GST — if GST applies, it's calculated and added on top to show
+        the real total, and tracked separately for your GST returns (input tax).
+      </p>
       <form className="form-grid" onSubmit={handleSubmit}>
         <label>
           Date
@@ -92,49 +91,15 @@ export default function NewPurchaseTab() {
           </select>
         </label>
         <label>
-          Product
-          <select value={form.product_id} onChange={(e) => setForm({ ...form, product_id: e.target.value })} required>
-            <option value="">Select…</option>
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.unit})
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Quantity
+          Amount before GST (SGD)
           <input
             type="number"
             step="0.01"
             min="0"
-            value={form.quantity}
-            onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+            value={form.amount_before_gst}
+            onChange={(e) => setForm({ ...form, amount_before_gst: e.target.value })}
             required
           />
-        </label>
-        <label>
-          Cost Price (SGD)
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.cost_price}
-            onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
-            required
-          />
-        </label>
-        <label>
-          Total
-          <input value={`S$${total.toFixed(2)}`} disabled />
-        </label>
-        <label>
-          Payment Type
-          <select value={form.payment_type} onChange={(e) => setForm({ ...form, payment_type: e.target.value })}>
-            <option>Cash</option>
-            <option>Bank</option>
-            <option>Credit</option>
-          </select>
         </label>
         <label>
           <span style={{ display: 'block', marginBottom: '0.3rem' }}>GST Applicable?</span>
@@ -142,8 +107,24 @@ export default function NewPurchaseTab() {
             value={form.gst_applicable ? 'yes' : 'no'}
             onChange={(e) => setForm({ ...form, gst_applicable: e.target.value === 'yes' })}
           >
-            <option value="yes">Yes</option>
+            <option value="yes">Yes — add GST ({rate}%)</option>
             <option value="no">No</option>
+          </select>
+        </label>
+        <label>
+          GST Amount
+          <input value={formatMoney(gstAmount)} disabled />
+        </label>
+        <label>
+          Total (Bill Amount)
+          <input value={formatMoney(total)} disabled />
+        </label>
+        <label>
+          Payment Type
+          <select value={form.payment_type} onChange={(e) => setForm({ ...form, payment_type: e.target.value })}>
+            <option>Cash</option>
+            <option>Bank</option>
+            <option>Credit</option>
           </select>
         </label>
         <label>
@@ -159,6 +140,11 @@ export default function NewPurchaseTab() {
           This will increase what you owe this supplier.
         </p>
       )}
+      <p className="muted" style={{ fontSize: '0.85rem' }}>
+        This entry won't update Inventory stock automatically (no product attached). Use{' '}
+        <strong>Inventory → Stock Movements</strong> if you also need to log stock-in for this
+        delivery.
+      </p>
       {error && <div className="inline-error">{error}</div>}
       {success && <div style={{ color: 'var(--success)', marginTop: '0.5rem' }}>{success}</div>}
     </div>

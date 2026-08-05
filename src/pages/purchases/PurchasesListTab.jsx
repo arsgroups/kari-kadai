@@ -29,7 +29,7 @@ export default function PurchasesListTab() {
     let query = supabase
       .from('purchases')
       .select(
-        'id, date, quantity, cost_price, total, payment_type, source, note, products(name, unit), suppliers(name)'
+        'id, date, amount_before_gst, gst_amount, gst_applicable, total, quantity, payment_type, source, note, products(name, unit), suppliers(name)'
       )
       .gte('date', filters.from)
       .lte('date', filters.to)
@@ -55,9 +55,9 @@ export default function PurchasesListTab() {
   const exportRows = rows.map((r) => ({
     date: formatDate(r.date),
     supplier: r.suppliers?.name,
-    product: r.products?.name,
-    quantity: r.quantity,
-    cost_price: r.cost_price,
+    product: r.products?.name ?? '',
+    amount_before_gst: r.amount_before_gst,
+    gst_amount: r.gst_amount,
     total: r.total,
     payment_type: r.payment_type,
     source: r.source,
@@ -106,6 +106,10 @@ export default function PurchasesListTab() {
             </select>
           </label>
         </div>
+        <p className="muted" style={{ fontSize: '0.8rem', marginTop: '0.75rem', marginBottom: 0 }}>
+          Product/Qty only apply to imported rows or ones you've linked to a product — quick manual
+          entries won't have them.
+        </p>
       </div>
 
       <div className="toolbar">
@@ -120,8 +124,8 @@ export default function PurchasesListTab() {
             { key: 'date', label: 'Date' },
             { key: 'supplier', label: 'Supplier' },
             { key: 'product', label: 'Product' },
-            { key: 'quantity', label: 'Qty' },
-            { key: 'cost_price', label: 'Cost Price' },
+            { key: 'amount_before_gst', label: 'Amount (excl. GST)' },
+            { key: 'gst_amount', label: 'GST' },
             { key: 'total', label: 'Total' },
             { key: 'payment_type', label: 'Payment' },
             { key: 'source', label: 'Source' },
@@ -141,8 +145,8 @@ export default function PurchasesListTab() {
                 <th>Date</th>
                 <th>Supplier</th>
                 <th>Product</th>
-                <th>Qty</th>
-                <th>Cost Price</th>
+                <th>Amount (excl. GST)</th>
+                <th>GST</th>
                 <th>Total</th>
                 <th>Payment</th>
                 <th>Source</th>
@@ -153,11 +157,12 @@ export default function PurchasesListTab() {
                 <tr key={r.id}>
                   <td>{formatDate(r.date)}</td>
                   <td>{r.suppliers?.name}</td>
-                  <td>{r.products?.name}</td>
                   <td>
-                    {r.quantity} {r.products?.unit}
+                    {r.products?.name ?? '—'}
+                    {r.products?.name && r.quantity != null ? ` (${r.quantity} ${r.products.unit})` : ''}
                   </td>
-                  <td>{formatMoney(r.cost_price)}</td>
+                  <td>{formatMoney(r.amount_before_gst)}</td>
+                  <td>{r.gst_applicable ? formatMoney(r.gst_amount) : '—'}</td>
                   <td>{formatMoney(r.total)}</td>
                   <td>
                     <span className={r.payment_type === 'Credit' ? 'tag tag-warning' : 'tag tag-success'}>

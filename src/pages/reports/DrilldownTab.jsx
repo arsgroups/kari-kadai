@@ -64,7 +64,7 @@ export default function DrilldownTab() {
     } else if (reportType === 'purchases') {
       let q = supabase
         .from('purchases')
-        .select('date, quantity, total, payment_type, products(name), suppliers(name)')
+        .select('date, amount_before_gst, gst_amount, total, payment_type, products(name), suppliers(name)')
         .gte('date', from)
         .lte('date', to)
       if (productId) q = q.eq('product_id', productId)
@@ -72,8 +72,9 @@ export default function DrilldownTab() {
       setRows(
         (data ?? []).map((r) => ({
           date: formatDate(r.date),
-          product: r.products?.name,
-          quantity: r.quantity,
+          product: r.products?.name ?? '',
+          amount_before_gst: r.amount_before_gst,
+          gst_amount: r.gst_amount,
           total: r.total,
           supplier: r.suppliers?.name,
           payment_type: r.payment_type,
@@ -111,10 +112,11 @@ export default function DrilldownTab() {
     ],
     purchases: [
       { key: 'date', label: 'Date' },
-      { key: 'product', label: 'Product' },
-      { key: 'quantity', label: 'Qty' },
-      { key: 'total', label: 'Total' },
       { key: 'supplier', label: 'Supplier' },
+      { key: 'product', label: 'Product' },
+      { key: 'amount_before_gst', label: 'Amount (excl. GST)' },
+      { key: 'gst_amount', label: 'GST' },
+      { key: 'total', label: 'Total' },
       { key: 'payment_type', label: 'Payment' },
     ],
     expenses: [
@@ -225,7 +227,11 @@ export default function DrilldownTab() {
               {rows.map((r, i) => (
                 <tr key={i}>
                   {columns.map((c) => (
-                    <td key={c.key}>{c.key === 'total' || c.key === 'amount' ? formatMoney(r[c.key]) : r[c.key]}</td>
+                    <td key={c.key}>
+                      {['total', 'amount', 'amount_before_gst', 'gst_amount'].includes(c.key)
+                        ? formatMoney(r[c.key])
+                        : r[c.key]}
+                    </td>
                   ))}
                 </tr>
               ))}

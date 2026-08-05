@@ -124,10 +124,14 @@ create table if not exists purchases (
   id uuid primary key default gen_random_uuid(),
   date date not null default current_date,
   supplier_id uuid not null references suppliers(id),
-  product_id uuid not null references products(id),
-  quantity numeric not null,
-  cost_price numeric not null,
-  total numeric generated always as (quantity * cost_price) stored,
+  -- Product/quantity are optional: quick bill entry only needs an amount, but
+  -- CSV import (and anyone who wants stock-in tracked) can still supply these.
+  product_id uuid references products(id),
+  quantity numeric,
+  cost_price numeric, -- legacy per-unit field, kept for CSV import compatibility
+  amount_before_gst numeric not null,
+  gst_amount numeric not null default 0,
+  total numeric generated always as (amount_before_gst + gst_amount) stored,
   payment_type text not null check (payment_type in ('Cash','Bank','Credit')),
   source text not null default 'manual' check (source in ('manual','imported')),
   import_batch_id uuid references import_batches(id),
@@ -273,8 +277,10 @@ create trigger sales_stock_movement
 
 create or replace function trg_purchase_stock_movement() returns trigger as $$
 begin
-  insert into stock_movements (date, product_id, movement_type, quantity, reference_type, reference_id)
-  values (new.date, new.product_id, 'purchase', abs(new.quantity), 'purchase', new.id);
+  if new.product_id is not null and new.quantity is not null then
+    insert into stock_movements (date, product_id, movement_type, quantity, reference_type, reference_id)
+    values (new.date, new.product_id, 'purchase', abs(new.quantity), 'purchase', new.id);
+  end if;
   return new;
 end;
 $$ language plpgsql;

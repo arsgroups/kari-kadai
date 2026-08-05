@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Papa from 'papaparse'
 import { supabase } from '../../lib/supabaseClient'
+import { fetchRateHistory, buildRateResolver, round2 } from '../../lib/gst'
 import { toISODate } from '../../lib/format'
 
 const OUR_FIELDS = [
@@ -29,7 +30,7 @@ export default function CsvImportTab() {
 
   useEffect(() => {
     loadMappings()
-    supabase.from('suppliers').select('id, name').then(({ data }) => setSuppliers(data ?? []))
+    supabase.from('suppliers').select('id, name, gst_registered').then(({ data }) => setSuppliers(data ?? []))
     supabase.from('products').select('id, name').then(({ data }) => setProducts(data ?? []))
   }, [])
 
@@ -88,6 +89,9 @@ export default function CsvImportTab() {
     setCommitting(true)
     setError('')
 
+    const rateRows = await fetchRateHistory()
+    const getRate = buildRateResolver(rateRows)
+
     const supplierCache = [...suppliers]
     const productCache = [...products]
     const unmatchedProducts = new Set()
@@ -132,12 +136,21 @@ export default function CsvImportTab() {
         parsedDate = `${yyyy}-${mm}-${dd}`
       }
 
+      // Cost Price here is treated as before-GST (matches how manual Purchase entry
+      // works), so GST is calculated and added on top, not extracted out of it.
+      const gstApplicable = supplier.gst_registered ?? true
+      const amountBeforeGst = round2(quantity * costPrice)
+      const gstAmount = gstApplicable ? round2(amountBeforeGst * (getRate(parsedDate) / 100)) : 0
+
       rowsToInsert.push({
         date: parsedDate,
         supplier_id: supplier.id,
         product_id: product.id,
         quantity,
         cost_price: costPrice,
+        amount_before_gst: amountBeforeGst,
+        gst_amount: gstAmount,
+        gst_applicable: gstApplicable,
         payment_type: paymentType,
         source: 'imported',
       })

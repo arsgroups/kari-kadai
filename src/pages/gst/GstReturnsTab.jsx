@@ -73,7 +73,7 @@ export default function GstReturnsTab() {
         .lte('date', form.period_end),
       supabase
         .from('purchases')
-        .select('date, total, gst_applicable')
+        .select('date, total, amount_before_gst, gst_amount, gst_applicable')
         .gte('date', form.period_start)
         .lte('date', form.period_end),
     ])
@@ -93,13 +93,21 @@ export default function GstReturnsTab() {
       box6 += gstPortion(s.total, rate)
     })
 
+    // Purchases now store amount_before_gst / gst_amount directly (GST is added on top at
+    // entry time). Fall back to extracting it from the total for any older rows that predate
+    // that change.
     let box5 = 0
     let box7 = 0
     ;(purchases ?? []).forEach((p) => {
       if (!p.gst_applicable) return
-      const rate = getRate(p.date)
-      box5 += netOfGst(p.total, rate)
-      box7 += gstPortion(p.total, rate)
+      if (p.amount_before_gst != null) {
+        box5 += p.amount_before_gst
+        box7 += p.gst_amount ?? 0
+      } else {
+        const rate = getRate(p.date)
+        box5 += netOfGst(p.total, rate)
+        box7 += gstPortion(p.total, rate)
+      }
     })
 
     box1 = round2(box1)
