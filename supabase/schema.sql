@@ -10,15 +10,58 @@ create extension if not exists pgcrypto;
 -- 1. PRODUCTS & STOCK
 -- ============================================================================
 
+create sequence if not exists item_code_seq start 1;
+
 create table if not exists products (
   id uuid primary key default gen_random_uuid(),
+  item_code text unique,
   name text not null,
   category text not null default 'Others',
-  unit text not null default 'kg',
-  low_stock_threshold numeric not null default 0,
+  description text,
+  unit text not null default 'kg', -- canonical inventory/stock unit
+  purchase_unit text not null default 'kg',
+  sales_unit text not null default 'kg',
+  -- how many inventory units are in 1 purchase/sales unit, e.g. 1 Carton = 30 pieces
+  purchase_to_inventory_factor numeric not null default 1,
+  sales_to_inventory_factor numeric not null default 1,
+  default_purchase_price numeric,
+  default_selling_price numeric,
+  low_stock_threshold numeric not null default 0, -- minimum stock
+  opening_stock numeric not null default 0,
+  opening_stock_value numeric not null default 0,
+  opening_stock_date date,
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
+
+create or replace function generate_item_code() returns trigger as $$
+begin
+  if new.item_code is null then
+    new.item_code := 'ITM-' || lpad(nextval('item_code_seq')::text, 4, '0');
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_generate_item_code on products;
+create trigger trg_generate_item_code
+  before insert on products
+  for each row execute function generate_item_code();
+
+create or replace function trg_product_opening_stock() returns trigger as $$
+begin
+  if new.opening_stock is not null and new.opening_stock <> 0 then
+    insert into stock_movements (date, product_id, movement_type, quantity, reference_type, note)
+    values (coalesce(new.opening_stock_date, current_date), new.id, 'opening', new.opening_stock, 'manual', 'Opening stock from Item Master');
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists product_opening_stock on products;
+create trigger product_opening_stock
+  after insert on products
+  for each row execute function trg_product_opening_stock();
 
 create table if not exists stock_movements (
   id uuid primary key default gen_random_uuid(),
@@ -54,10 +97,23 @@ create table if not exists customers (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   type text not null check (type in ('Restaurant','Home Delivery')),
-  contact text,
+  contact text, -- treated as Mobile in the UI
+  address text,
   credit_limit numeric,
+  credit_days integer,
   is_active boolean not null default true,
   created_at timestamptz not null default now()
+);
+
+-- Per-customer pricing: selecting a customer on an invoice loads these prices,
+-- editable per line if needed.
+create table if not exists customer_item_prices (
+  id uuid primary key default gen_random_uuid(),
+  customer_id uuid not null references customers(id) on delete cascade,
+  product_id uuid not null references products(id) on delete cascade,
+  price numeric not null,
+  created_at timestamptz not null default now(),
+  unique (customer_id, product_id)
 );
 
 create table if not exists sales (
@@ -97,7 +153,10 @@ create table if not exists suppliers (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   contact text,
+  address text,
+  phone text,
   gst_registered boolean not null default true,
+  credit_days integer,
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -298,9 +357,12 @@ create or replace view v_current_stock
   with (security_invoker = true) as
 select
   p.id as product_id,
+  p.item_code,
   p.name,
   p.category,
   p.unit,
+  p.purchase_unit,
+  p.sales_unit,
   p.low_stock_threshold,
   p.is_active,
   coalesce(sum(sm.quantity), 0) as current_stock
@@ -349,7 +411,7 @@ begin
       'customer_payments','suppliers','purchases','supplier_payments',
       'manual_accounting_totals','petty_cash_expense_types','petty_cash_entries',
       'expense_categories','monthly_expenses','daily_closing','gst_rate_history',
-      'gst_returns','csv_import_mappings','import_batches'
+      'gst_returns','csv_import_mappings','import_batches','customer_item_prices'
     ])
   loop
     execute format('alter table %I enable row level security', t);

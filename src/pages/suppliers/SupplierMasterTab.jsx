@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatMoney } from '../../lib/format'
 
-const emptyForm = { id: null, name: '', contact: '', gst_registered: true }
+const emptyForm = { id: null, name: '', phone: '', address: '', gst_registered: true, credit_days: '' }
 
 export default function SupplierMasterTab() {
   const [rows, setRows] = useState([])
@@ -25,13 +25,16 @@ export default function SupplierMasterTab() {
   }, [])
 
   async function startEdit(row) {
-    const { data } = await supabase
-      .from('suppliers')
-      .select('id, name, contact, gst_registered')
-      .eq('id', row.supplier_id)
-      .single()
+    const { data } = await supabase.from('suppliers').select('*').eq('id', row.supplier_id).single()
     if (data) {
-      setForm({ id: data.id, name: data.name, contact: data.contact ?? '', gst_registered: data.gst_registered })
+      setForm({
+        id: data.id,
+        name: data.name,
+        phone: data.phone ?? data.contact ?? '',
+        address: data.address ?? '',
+        gst_registered: data.gst_registered,
+        credit_days: data.credit_days ?? '',
+      })
       setShowForm(true)
     }
   }
@@ -42,8 +45,11 @@ export default function SupplierMasterTab() {
     setError('')
     const payload = {
       name: form.name,
-      contact: form.contact || null,
+      phone: form.phone || null,
+      contact: form.phone || null, // kept in sync for backward compatibility
+      address: form.address || null,
       gst_registered: form.gst_registered,
+      credit_days: form.credit_days === '' ? null : Number(form.credit_days),
     }
     const { error } = form.id
       ? await supabase.from('suppliers').update(payload).eq('id', form.id)
@@ -82,8 +88,21 @@ export default function SupplierMasterTab() {
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
             </label>
             <label>
-              Contact
-              <input value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} />
+              Phone
+              <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            </label>
+            <label>
+              Address
+              <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            </label>
+            <label>
+              Credit Days
+              <input
+                type="number"
+                step="1"
+                value={form.credit_days}
+                onChange={(e) => setForm({ ...form, credit_days: e.target.value })}
+              />
             </label>
             <label>
               <span style={{ display: 'block', marginBottom: '0.3rem' }}>GST Registered?</span>

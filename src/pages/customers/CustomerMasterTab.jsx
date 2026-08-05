@@ -2,7 +2,16 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatMoney } from '../../lib/format'
 
-const emptyForm = { id: null, name: '', type: 'Restaurant', contact: '', credit_limit: '', is_active: true }
+const emptyForm = {
+  id: null,
+  name: '',
+  type: 'Restaurant',
+  mobile: '',
+  address: '',
+  credit_limit: '',
+  credit_days: '',
+  is_active: true,
+}
 
 export default function CustomerMasterTab() {
   const [rows, setRows] = useState([])
@@ -27,14 +36,18 @@ export default function CustomerMasterTab() {
     load()
   }, [])
 
-  function startEdit(row) {
+  async function startEdit(row) {
+    const { data } = await supabase.from('customers').select('*').eq('id', row.customer_id).single()
+    if (!data) return
     setForm({
-      id: row.customer_id,
-      name: row.name,
-      type: row.type,
-      contact: row.contact ?? '',
-      credit_limit: row.credit_limit ?? '',
-      is_active: true,
+      id: data.id,
+      name: data.name,
+      type: data.type,
+      mobile: data.contact ?? '',
+      address: data.address ?? '',
+      credit_limit: data.credit_limit ?? '',
+      credit_days: data.credit_days ?? '',
+      is_active: data.is_active,
     })
     setShowForm(true)
   }
@@ -46,8 +59,11 @@ export default function CustomerMasterTab() {
     const payload = {
       name: form.name,
       type: form.type,
-      contact: form.contact || null,
+      contact: form.mobile || null,
+      address: form.address || null,
       credit_limit: form.credit_limit === '' ? null : Number(form.credit_limit),
+      credit_days: form.credit_days === '' ? null : Number(form.credit_days),
+      is_active: form.is_active,
     }
     const { error } = form.id
       ? await supabase.from('customers').update(payload).eq('id', form.id)
@@ -93,8 +109,12 @@ export default function CustomerMasterTab() {
               </select>
             </label>
             <label>
-              Contact
-              <input value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} />
+              Mobile
+              <input value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
+            </label>
+            <label>
+              Address
+              <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
             </label>
             <label>
               Credit Limit (SGD, optional)
@@ -105,6 +125,27 @@ export default function CustomerMasterTab() {
                 onChange={(e) => setForm({ ...form, credit_limit: e.target.value })}
               />
             </label>
+            <label>
+              Credit Days
+              <input
+                type="number"
+                step="1"
+                value={form.credit_days}
+                onChange={(e) => setForm({ ...form, credit_days: e.target.value })}
+              />
+            </label>
+            {form.id && (
+              <label>
+                <span style={{ display: 'block', marginBottom: '0.3rem' }}>Status</span>
+                <select
+                  value={form.is_active ? 'active' : 'inactive'}
+                  onChange={(e) => setForm({ ...form, is_active: e.target.value === 'active' })}
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </label>
+            )}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button className="btn" type="submit" disabled={saving}>
                 {saving ? 'Saving…' : 'Save'}

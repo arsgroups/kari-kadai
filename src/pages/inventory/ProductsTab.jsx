@@ -1,7 +1,25 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
+import { toISODate } from '../../lib/format'
 
-const emptyForm = { id: null, name: '', category: '', unit: 'kg', low_stock_threshold: 0, is_active: true }
+const emptyForm = {
+  id: null,
+  name: '',
+  category: '',
+  description: '',
+  unit: 'kg',
+  purchase_unit: 'kg',
+  sales_unit: 'kg',
+  purchase_to_inventory_factor: 1,
+  sales_to_inventory_factor: 1,
+  default_purchase_price: '',
+  default_selling_price: '',
+  low_stock_threshold: 0,
+  opening_stock: 0,
+  opening_stock_value: 0,
+  opening_stock_date: toISODate(),
+  is_active: true,
+}
 
 export default function ProductsTab() {
   const [rows, setRows] = useState([])
@@ -24,14 +42,27 @@ export default function ProductsTab() {
     load()
   }, [])
 
-  function startEdit(row) {
+  async function startEdit(row) {
+    const { data } = await supabase.from('products').select('*').eq('id', row.product_id).single()
+    if (!data) return
     setForm({
-      id: row.product_id,
-      name: row.name,
-      category: row.category,
-      unit: row.unit,
-      low_stock_threshold: row.low_stock_threshold,
-      is_active: row.is_active,
+      id: data.id,
+      name: data.name,
+      category: data.category,
+      description: data.description ?? '',
+      unit: data.unit,
+      purchase_unit: data.purchase_unit,
+      sales_unit: data.sales_unit,
+      purchase_to_inventory_factor: data.purchase_to_inventory_factor,
+      sales_to_inventory_factor: data.sales_to_inventory_factor,
+      default_purchase_price: data.default_purchase_price ?? '',
+      default_selling_price: data.default_selling_price ?? '',
+      low_stock_threshold: data.low_stock_threshold,
+      opening_stock: data.opening_stock,
+      opening_stock_value: data.opening_stock_value,
+      opening_stock_date: data.opening_stock_date ?? toISODate(),
+      is_active: data.is_active,
+      item_code: data.item_code,
     })
     setShowForm(true)
   }
@@ -48,9 +79,22 @@ export default function ProductsTab() {
     const payload = {
       name: form.name,
       category: form.category || 'Others',
+      description: form.description || null,
       unit: form.unit || 'kg',
+      purchase_unit: form.purchase_unit || form.unit || 'kg',
+      sales_unit: form.sales_unit || form.unit || 'kg',
+      purchase_to_inventory_factor: Number(form.purchase_to_inventory_factor) || 1,
+      sales_to_inventory_factor: Number(form.sales_to_inventory_factor) || 1,
+      default_purchase_price: form.default_purchase_price === '' ? null : Number(form.default_purchase_price),
+      default_selling_price: form.default_selling_price === '' ? null : Number(form.default_selling_price),
       low_stock_threshold: Number(form.low_stock_threshold) || 0,
       is_active: form.is_active,
+    }
+    if (!form.id) {
+      // Opening stock only applies at creation — editing later shouldn't re-log a movement.
+      payload.opening_stock = Number(form.opening_stock) || 0
+      payload.opening_stock_value = Number(form.opening_stock_value) || 0
+      payload.opening_stock_date = form.opening_stock_date || toISODate()
     }
     const { error } = form.id
       ? await supabase.from('products').update(payload).eq('id', form.id)
@@ -80,7 +124,7 @@ export default function ProductsTab() {
     <div>
       <div className="toolbar">
         <button className="btn" onClick={startNew}>
-          + Add Product
+          + Add Item
         </button>
         <button
           className={lowStockOnly ? 'btn' : 'btn-secondary'}
@@ -92,7 +136,7 @@ export default function ProductsTab() {
 
       {showForm && (
         <div className="card">
-          <h3>{form.id ? 'Edit Product' : 'New Product'}</h3>
+          <h3>{form.id ? `Edit Item ${form.item_code ? `(${form.item_code})` : ''}` : 'New Item'}</h3>
           <form className="form-grid" onSubmit={handleSubmit}>
             <label>
               Name
@@ -117,7 +161,11 @@ export default function ProductsTab() {
               </datalist>
             </label>
             <label>
-              Unit
+              Description
+              <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            </label>
+            <label>
+              Inventory Unit
               <input
                 value={form.unit}
                 onChange={(e) => setForm({ ...form, unit: e.target.value })}
@@ -125,7 +173,61 @@ export default function ProductsTab() {
               />
             </label>
             <label>
-              Low Stock Threshold
+              Purchase Unit
+              <input
+                value={form.purchase_unit}
+                onChange={(e) => setForm({ ...form, purchase_unit: e.target.value })}
+                placeholder="e.g. Carton, KG"
+              />
+            </label>
+            <label>
+              1 Purchase Unit = how many Inventory Units?
+              <input
+                type="number"
+                step="0.0001"
+                min="0"
+                value={form.purchase_to_inventory_factor}
+                onChange={(e) => setForm({ ...form, purchase_to_inventory_factor: e.target.value })}
+              />
+            </label>
+            <label>
+              Sales Unit
+              <input
+                value={form.sales_unit}
+                onChange={(e) => setForm({ ...form, sales_unit: e.target.value })}
+                placeholder="e.g. Unit, KG"
+              />
+            </label>
+            <label>
+              1 Sales Unit = how many Inventory Units?
+              <input
+                type="number"
+                step="0.0001"
+                min="0"
+                value={form.sales_to_inventory_factor}
+                onChange={(e) => setForm({ ...form, sales_to_inventory_factor: e.target.value })}
+              />
+            </label>
+            <label>
+              Default Purchase Price
+              <input
+                type="number"
+                step="0.01"
+                value={form.default_purchase_price}
+                onChange={(e) => setForm({ ...form, default_purchase_price: e.target.value })}
+              />
+            </label>
+            <label>
+              Default Selling Price
+              <input
+                type="number"
+                step="0.01"
+                value={form.default_selling_price}
+                onChange={(e) => setForm({ ...form, default_selling_price: e.target.value })}
+              />
+            </label>
+            <label>
+              Minimum Stock
               <input
                 type="number"
                 step="0.01"
@@ -133,6 +235,36 @@ export default function ProductsTab() {
                 onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })}
               />
             </label>
+            {!form.id && (
+              <>
+                <label>
+                  Opening Stock
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.opening_stock}
+                    onChange={(e) => setForm({ ...form, opening_stock: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Opening Stock Value (SGD)
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.opening_stock_value}
+                    onChange={(e) => setForm({ ...form, opening_stock_value: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Opening Stock Date
+                  <input
+                    type="date"
+                    value={form.opening_stock_date}
+                    onChange={(e) => setForm({ ...form, opening_stock_date: e.target.value })}
+                  />
+                </label>
+              </>
+            )}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button className="btn" type="submit" disabled={saving}>
                 {saving ? 'Saving…' : 'Save'}
@@ -160,11 +292,13 @@ export default function ProductsTab() {
           <table className="data-table">
             <thead>
               <tr>
+                <th>Item Code</th>
                 <th>Name</th>
                 <th>Category</th>
-                <th>Unit</th>
+                <th>Purchase Unit</th>
+                <th>Sales Unit</th>
                 <th>Current Stock</th>
-                <th>Low Stock At</th>
+                <th>Min Stock</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -174,9 +308,11 @@ export default function ProductsTab() {
                 const low = r.current_stock <= r.low_stock_threshold
                 return (
                   <tr key={r.product_id}>
+                    <td>{r.item_code}</td>
                     <td>{r.name}</td>
                     <td>{r.category}</td>
-                    <td>{r.unit}</td>
+                    <td>{r.purchase_unit}</td>
+                    <td>{r.sales_unit}</td>
                     <td>
                       {r.current_stock} {r.unit}{' '}
                       {low && <span className="tag tag-danger">Low</span>}
@@ -200,8 +336,8 @@ export default function ProductsTab() {
               })}
               {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted">
-                    No products found.
+                  <td colSpan={9} className="muted">
+                    No items found.
                   </td>
                 </tr>
               )}
