@@ -2,8 +2,23 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney } from '../../lib/format'
 import { COMPANY } from '../../lib/companyInfo'
+import invoiceHeaderImg from '../../assets/invoice-header.jpg'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+
+function loadImageAsDataUrl(url) {
+  return fetch(url)
+    .then((res) => res.blob())
+    .then(
+      (blob) =>
+        new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve(reader.result)
+          reader.onerror = reject
+          reader.readAsDataURL(blob)
+        })
+    )
+}
 
 export default function SaleInvoiceView({ invoiceId, onClose }) {
   const [invoice, setInvoice] = useState(null)
@@ -33,28 +48,32 @@ export default function SaleInvoiceView({ invoiceId, onClose }) {
     setLoading(false)
   }
 
-  function downloadPdf() {
+  async function downloadPdf() {
     if (!invoice) return
     const doc = new jsPDF()
-    doc.setFontSize(16)
-    doc.text(COMPANY.name, 14, 18)
+
+    // Banner is 936x324px (~2.889:1) — fit it to the usable A4 width (210mm - 2*14mm margin).
+    const bannerWidth = 182
+    const bannerHeight = bannerWidth / (936 / 324)
+    const bannerDataUrl = await loadImageAsDataUrl(invoiceHeaderImg)
+    doc.addImage(bannerDataUrl, 'JPEG', 14, 10, bannerWidth, bannerHeight)
+
+    const metaY = 10 + bannerHeight + 8
     doc.setFontSize(10)
-    doc.text(COMPANY.addressLine1, 14, 25)
-    doc.text(COMPANY.addressLine2, 14, 30)
-    doc.text(`Mobile: ${COMPANY.mobile}`, 14, 35)
+    doc.text(COMPANY.name, 14, metaY)
 
     doc.setFontSize(14)
-    doc.text('TAX INVOICE', 150, 18)
+    doc.text('TAX INVOICE', 150, metaY - 4)
     doc.setFontSize(10)
-    doc.text(`Invoice No: ${invoice.invoice_number}`, 150, 25)
-    doc.text(`Date: ${formatDate(invoice.date)}`, 150, 30)
-    doc.text(`Payment: ${invoice.payment_type}`, 150, 35)
+    doc.text(`Invoice No: ${invoice.invoice_number}`, 150, metaY + 3)
+    doc.text(`Date: ${formatDate(invoice.date)}`, 150, metaY + 8)
+    doc.text(`Payment: ${invoice.payment_type}`, 150, metaY + 13)
 
-    doc.text(`Customer: ${invoice.customers?.name ?? 'Counter Sale'}`, 14, 45)
-    if (invoice.customers?.address) doc.text(invoice.customers.address, 14, 50)
+    doc.text(`Customer: ${invoice.customers?.name ?? 'Counter Sale'}`, 14, metaY + 10)
+    if (invoice.customers?.address) doc.text(invoice.customers.address, 14, metaY + 15)
 
     autoTable(doc, {
-      startY: 58,
+      startY: metaY + 23,
       head: [['Item', 'Qty', 'Unit', 'Price', 'Discount', 'GST', 'Total']],
       body: items.map((it) => [
         it.products?.name ?? '',
@@ -105,16 +124,10 @@ export default function SaleInvoiceView({ invoiceId, onClose }) {
       </div>
 
       <div className="invoice-sheet">
-        <div className="invoice-header">
-          <div>
-            <h2 style={{ margin: 0 }}>{COMPANY.name}</h2>
-            <p className="muted" style={{ margin: '0.2rem 0' }}>
-              {COMPANY.addressLine1}
-              <br />
-              {COMPANY.addressLine2}
-            </p>
-            <p className="muted" style={{ margin: 0 }}>Mobile: {COMPANY.mobile}</p>
-          </div>
+        <img src={invoiceHeaderImg} alt={COMPANY.name} className="invoice-banner" />
+
+        <div className="invoice-meta-row">
+          <div className="invoice-legal-name muted">{COMPANY.name}</div>
           <div style={{ textAlign: 'right' }}>
             <h1 style={{ margin: 0 }}>TAX INVOICE</h1>
             <p style={{ margin: '0.2rem 0' }}>Invoice No: <strong>{invoice.invoice_number}</strong></p>
