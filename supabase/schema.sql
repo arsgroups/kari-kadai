@@ -116,24 +116,78 @@ create table if not exists customer_item_prices (
   unique (customer_id, product_id)
 );
 
-create table if not exists sales (
+create sequence if not exists sale_invoice_seq start 1;
+
+create table if not exists sale_invoices (
   id uuid primary key default gen_random_uuid(),
+  invoice_number text unique,
   date date not null default current_date,
-  product_id uuid not null references products(id),
-  quantity numeric not null,
-  unit_price numeric not null,
-  total numeric generated always as (quantity * unit_price) stored,
+  customer_id uuid references customers(id), -- nullable: Counter sales have no customer
   channel text not null check (channel in ('Restaurant','Home Delivery','Counter')),
-  customer_id uuid references customers(id),
   payment_type text not null check (payment_type in ('Cash','Bank','Credit')),
-  gst_applicable boolean not null default true,
+  subtotal numeric not null default 0,
+  gst_amount numeric not null default 0,
+  total numeric generated always as (subtotal + gst_amount) stored,
+  paid_amount numeric not null default 0,
+  balance numeric generated always as (subtotal + gst_amount - paid_amount) stored,
+  remarks text,
   note text,
   created_at timestamptz not null default now()
 );
 
-create index if not exists idx_sales_date on sales(date);
-create index if not exists idx_sales_product on sales(product_id);
-create index if not exists idx_sales_customer on sales(customer_id);
+create table if not exists sale_invoice_items (
+  id uuid primary key default gen_random_uuid(),
+  sale_invoice_id uuid not null references sale_invoices(id) on delete cascade,
+  product_id uuid references products(id),
+  quantity numeric not null,
+  unit text,
+  rate numeric not null,
+  discount numeric not null default 0,
+  gst_applicable boolean not null default true,
+  gst_amount numeric not null default 0,
+  amount numeric generated always as (quantity * rate - discount) stored,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_sale_invoices_date on sale_invoices(date);
+create index if not exists idx_sale_invoices_customer on sale_invoices(customer_id);
+create index if not exists idx_sale_invoice_items_invoice on sale_invoice_items(sale_invoice_id);
+create index if not exists idx_sale_invoice_items_product on sale_invoice_items(product_id);
+
+create or replace function generate_sale_invoice_number() returns trigger as $$
+begin
+  if new.invoice_number is null then
+    new.invoice_number := 'INV-' || lpad(nextval('sale_invoice_seq')::text, 5, '0');
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_generate_sale_invoice_number on sale_invoices;
+create trigger trg_generate_sale_invoice_number
+  before insert on sale_invoices
+  for each row execute function generate_sale_invoice_number();
+
+create or replace function trg_sale_item_stock_movement() returns trigger as $$
+declare
+  factor numeric;
+  invoice_date date;
+begin
+  if new.product_id is null then
+    return new;
+  end if;
+  select sales_to_inventory_factor into factor from products where id = new.product_id;
+  select date into invoice_date from sale_invoices where id = new.sale_invoice_id;
+  insert into stock_movements (date, product_id, movement_type, quantity, reference_type, reference_id)
+  values (invoice_date, new.product_id, 'sale', -abs(new.quantity) * coalesce(factor, 1), 'sale', new.id);
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists sale_item_stock_movement on sale_invoice_items;
+create trigger sale_item_stock_movement
+  after insert on sale_invoice_items
+  for each row execute function trg_sale_item_stock_movement();
 
 create table if not exists customer_payments (
   id uuid primary key default gen_random_uuid(),
@@ -368,19 +422,6 @@ create table if not exists gst_returns (
 -- instead of relying on the client to make two separate calls.
 -- ============================================================================
 
-create or replace function trg_sale_stock_movement() returns trigger as $$
-begin
-  insert into stock_movements (date, product_id, movement_type, quantity, reference_type, reference_id)
-  values (new.date, new.product_id, 'sale', -abs(new.quantity), 'sale', new.id);
-  return new;
-end;
-$$ language plpgsql;
-
-drop trigger if exists sales_stock_movement on sales;
-create trigger sales_stock_movement
-  after insert on sales
-  for each row execute function trg_sale_stock_movement();
-
 -- ============================================================================
 -- VIEWS (security_invoker so they respect the querying user's RLS)
 -- ============================================================================
@@ -409,7 +450,7 @@ select
   c.name,
   c.type,
   c.credit_limit,
-  coalesce((select sum(s.total) from sales s where s.customer_id = c.id and s.payment_type = 'Credit'), 0)
+  coalesce((select sum(si.balance) from sale_invoices si where si.customer_id = c.id), 0)
     - coalesce((select sum(cp.amount) from customer_payments cp where cp.customer_id = c.id), 0) as outstanding
 from customers c;
 
@@ -439,7 +480,8 @@ declare
 begin
   for t in
     select unnest(array[
-      'products','stock_movements','stock_verifications','customers','sales',
+      'products','stock_movements','stock_verifications','customers',
+      'sale_invoices','sale_invoice_items',
       'customer_payments','suppliers','purchase_invoices','purchase_invoice_items','supplier_payments',
       'manual_accounting_totals','petty_cash_expense_types','petty_cash_entries',
       'expense_categories','monthly_expenses','daily_closing','gst_rate_history',

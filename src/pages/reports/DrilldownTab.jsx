@@ -41,24 +41,27 @@ export default function DrilldownTab() {
   async function load() {
     setLoading(true)
     if (reportType === 'sales') {
+      // One row per sale invoice line item (a single invoice can span multiple products).
       let q = supabase
-        .from('sales')
-        .select('date, quantity, total, channel, payment_type, products(name), customers(name)')
-        .gte('date', from)
-        .lte('date', to)
+        .from('sale_invoice_items')
+        .select(
+          'quantity, amount, gst_amount, gst_applicable, products(name), sale_invoices!inner(date, channel, payment_type, customer_id, customers(name))'
+        )
+        .gte('sale_invoices.date', from)
+        .lte('sale_invoices.date', to)
       if (productId) q = q.eq('product_id', productId)
-      if (channel) q = q.eq('channel', channel)
-      if (customerId) q = q.eq('customer_id', customerId)
-      const { data } = await q.order('date', { ascending: false }).limit(500)
+      if (channel) q = q.eq('sale_invoices.channel', channel)
+      if (customerId) q = q.eq('sale_invoices.customer_id', customerId)
+      const { data } = await q.limit(500)
       setRows(
         (data ?? []).map((r) => ({
-          date: formatDate(r.date),
+          date: formatDate(r.sale_invoices?.date),
           product: r.products?.name,
           quantity: r.quantity,
-          total: r.total,
-          channel: r.channel,
-          customer: r.customers?.name ?? '',
-          payment_type: r.payment_type,
+          total: r.amount + (r.gst_applicable ? r.gst_amount : 0),
+          channel: r.sale_invoices?.channel,
+          customer: r.sale_invoices?.customers?.name ?? '',
+          payment_type: r.sale_invoices?.payment_type,
         }))
       )
     } else if (reportType === 'purchases') {

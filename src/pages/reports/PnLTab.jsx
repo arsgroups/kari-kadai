@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { fetchRateHistory, buildRateResolver, netOfGst, round2 } from '../../lib/gst'
+import { round2 } from '../../lib/gst'
 import { formatMoney, toISODate } from '../../lib/format'
 import ExportButtons from '../../components/ExportButtons'
 
@@ -22,11 +22,9 @@ export default function PnLTab() {
 
   async function load() {
     setLoading(true)
-    const rateRows = await fetchRateHistory()
-    const getRate = buildRateResolver(rateRows)
 
     const [{ data: sales }, { data: purchases }, { data: pettyCash }, { data: monthlyExpenses }] = await Promise.all([
-      supabase.from('sales').select('date, total, gst_applicable').gte('date', from).lte('date', to),
+      supabase.from('sale_invoices').select('date, subtotal').gte('date', from).lte('date', to),
       supabase.from('purchase_invoices').select('date, total, subtotal').gte('date', from).lte('date', to),
       supabase
         .from('petty_cash_entries')
@@ -41,13 +39,9 @@ export default function PnLTab() {
         .lte('month', to.slice(0, 7) + '-01'),
     ])
 
-    let revenueNet = 0
-    ;(sales ?? []).forEach((s) => {
-      revenueNet += s.gst_applicable ? netOfGst(s.total, getRate(s.date)) : s.total
-    })
-
-    // purchase_invoices.subtotal is already GST-exclusive (GST is added on top at entry
-    // time), so it's used directly for COGS with no extraction needed.
+    // Both sale_invoices.subtotal and purchase_invoices.subtotal are already GST-exclusive
+    // (GST is added on top at entry time), so they're used directly with no extraction needed.
+    const revenueNet = (sales ?? []).reduce((sum, s) => sum + s.subtotal, 0)
     const cogsNet = (purchases ?? []).reduce((sum, p) => sum + p.subtotal, 0)
 
     const pettyTotal = (pettyCash ?? []).reduce((sum, p) => sum + p.amount, 0)

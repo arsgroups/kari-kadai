@@ -8,15 +8,15 @@ const SORT_OPTIONS = [
   { value: 'age', label: 'Age of debt (oldest first)' },
 ]
 
-// For each customer, walks their credit sales oldest-first and consumes payments
-// against them FIFO-style, to find the date of the oldest still-unpaid sale.
-function computeOldestUnpaidDate(creditSales, totalPayments) {
+// For each customer, walks their unpaid invoices oldest-first and consumes
+// payments against them FIFO-style, to find the date of the oldest still-unpaid one.
+function computeOldestUnpaidDate(invoicesWithBalance, totalPayments) {
   let remainingPayments = totalPayments
-  for (const sale of creditSales) {
-    if (remainingPayments >= sale.total) {
-      remainingPayments -= sale.total
+  for (const invoice of invoicesWithBalance) {
+    if (remainingPayments >= invoice.balance) {
+      remainingPayments -= invoice.balance
     } else {
-      return sale.date
+      return invoice.date
     }
   }
   return null // fully paid off
@@ -44,17 +44,17 @@ export default function OutstandingReportTab() {
 
     const enriched = await Promise.all(
       (outstandingRows ?? []).map(async (row) => {
-        const [{ data: sales }, { data: payments }] = await Promise.all([
+        const [{ data: invoices }, { data: payments }] = await Promise.all([
           supabase
-            .from('sales')
-            .select('date, total')
+            .from('sale_invoices')
+            .select('date, balance')
             .eq('customer_id', row.customer_id)
-            .eq('payment_type', 'Credit')
+            .gt('balance', 0)
             .order('date', { ascending: true }),
           supabase.from('customer_payments').select('amount').eq('customer_id', row.customer_id),
         ])
         const totalPayments = (payments ?? []).reduce((sum, p) => sum + p.amount, 0)
-        const oldestUnpaidDate = computeOldestUnpaidDate(sales ?? [], totalPayments)
+        const oldestUnpaidDate = computeOldestUnpaidDate(invoices ?? [], totalPayments)
         const ageDays = oldestUnpaidDate
           ? Math.floor((new Date(toISODate()) - new Date(oldestUnpaidDate)) / (1000 * 60 * 60 * 24))
           : 0

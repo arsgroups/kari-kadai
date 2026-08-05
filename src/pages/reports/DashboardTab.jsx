@@ -48,16 +48,18 @@ export default function DashboardTab() {
   async function load() {
     setLoading(true)
     const since = daysAgo(60)
-    const [{ data: sales }, { data: purchases }] = await Promise.all([
-      supabase
-        .from('sales')
-        .select('date, total, channel, products(name)')
-        .gte('date', toISODate(since)),
+    const [{ data: sales }, { data: purchases }, { data: saleItems }] = await Promise.all([
+      supabase.from('sale_invoices').select('date, total, channel').gte('date', toISODate(since)),
       supabase.from('purchase_invoices').select('date, total').gte('date', toISODate(since)),
+      supabase
+        .from('sale_invoice_items')
+        .select('amount, gst_amount, gst_applicable, products(name), sale_invoices!inner(date)')
+        .gte('sale_invoices.date', toISODate(since)),
     ])
 
     const salesRows = sales ?? []
     const purchaseRows = purchases ?? []
+    const saleItemRows = saleItems ?? []
 
     // Daily trend, last 30 days
     const byDay = {}
@@ -73,14 +75,15 @@ export default function DashboardTab() {
     })
     setDailySales(Object.values(byDay))
 
-    // Current month product breakdown
+    // Current month product breakdown (from line items, since a product isn't on the invoice itself)
     const monthStart = toISODate(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
     const byProduct = {}
-    salesRows
-      .filter((s) => s.date >= monthStart)
-      .forEach((s) => {
-        const name = s.products?.name ?? 'Unknown'
-        byProduct[name] = (byProduct[name] ?? 0) + s.total
+    saleItemRows
+      .filter((it) => it.sale_invoices?.date >= monthStart)
+      .forEach((it) => {
+        const name = it.products?.name ?? 'Unknown'
+        const lineTotal = it.amount + (it.gst_applicable ? it.gst_amount : 0)
+        byProduct[name] = (byProduct[name] ?? 0) + lineTotal
       })
     setProductSales(Object.entries(byProduct).map(([name, total]) => ({ name, total })))
 

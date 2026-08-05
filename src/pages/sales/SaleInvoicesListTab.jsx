@@ -1,0 +1,249 @@
+import { Fragment, useEffect, useState } from 'react'
+import { supabase } from '../../lib/supabaseClient'
+import { formatDate, formatMoney, toISODate } from '../../lib/format'
+import ExportButtons from '../../components/ExportButtons'
+import SaleInvoiceView from './SaleInvoiceView'
+
+function firstOfMonth() {
+  const d = new Date()
+  return toISODate(new Date(d.getFullYear(), d.getMonth(), 1))
+}
+
+const emptyFilters = { from: firstOfMonth(), to: toISODate(), channel: '', customer_id: '' }
+
+export default function SaleInvoicesListTab() {
+  const [rows, setRows] = useState([])
+  const [customers, setCustomers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [filters, setFilters] = useState(emptyFilters)
+  const [expandedId, setExpandedId] = useState(null)
+  const [itemsByInvoice, setItemsByInvoice] = useState({})
+  const [viewingInvoiceId, setViewingInvoiceId] = useState(null)
+
+  useEffect(() => {
+    supabase.from('customers').select('id, name').order('name').then(({ data }) => setCustomers(data ?? []))
+  }, [])
+
+  async function load() {
+    setLoading(true)
+    setError('')
+    let query = supabase
+      .from('sale_invoices')
+      .select('id, invoice_number, date, channel, subtotal, gst_amount, total, paid_amount, balance, payment_type, customers(name)')
+      .gte('date', filters.from)
+      .lte('date', filters.to)
+      .order('date', { ascending: false })
+
+    if (filters.channel) query = query.eq('channel', filters.channel)
+    if (filters.customer_id) query = query.eq('customer_id', filters.customer_id)
+
+    const { data, error } = await query.limit(500)
+    if (error) setError(error.message)
+    else setRows(data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters])
+
+  async function toggleExpand(invoiceId) {
+    if (expandedId === invoiceId) {
+      setExpandedId(null)
+      return
+    }
+    setExpandedId(invoiceId)
+    if (!itemsByInvoice[invoiceId]) {
+      const { data } = await supabase
+        .from('sale_invoice_items')
+        .select('id, quantity, unit, rate, discount, gst_applicable, gst_amount, amount, products(name)')
+        .eq('sale_invoice_id', invoiceId)
+      setItemsByInvoice({ ...itemsByInvoice, [invoiceId]: data ?? [] })
+    }
+  }
+
+  if (viewingInvoiceId) {
+    return <SaleInvoiceView invoiceId={viewingInvoiceId} onClose={() => setViewingInvoiceId(null)} />
+  }
+
+  const totalAmount = rows.reduce((sum, r) => sum + r.total, 0)
+
+  const exportRows = rows.map((r) => ({
+    invoice_number: r.invoice_number,
+    date: formatDate(r.date),
+    channel: r.channel,
+    customer: r.customers?.name ?? '',
+    subtotal: r.subtotal,
+    gst_amount: r.gst_amount,
+    total: r.total,
+    paid_amount: r.paid_amount,
+    balance: r.balance,
+    payment_type: r.payment_type,
+  }))
+
+  return (
+    <div>
+      <div className="card">
+        <div className="form-grid">
+          <label>
+            From
+            <input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
+          </label>
+          <label>
+            To
+            <input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} />
+          </label>
+          <label>
+            Channel
+            <select value={filters.channel} onChange={(e) => setFilters({ ...filters, channel: e.target.value })}>
+              <option value="">All</option>
+              <option>Counter</option>
+              <option>Restaurant</option>
+              <option>Home Delivery</option>
+            </select>
+          </label>
+          <label>
+            Customer
+            <select value={filters.customer_id} onChange={(e) => setFilters({ ...filters, customer_id: e.target.value })}>
+              <option value="">All</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className="toolbar">
+        <div className="tile" style={{ margin: 0 }}>
+          <div className="tile-label">Total (filtered)</div>
+          <div className="tile-value">{formatMoney(totalAmount)}</div>
+        </div>
+        <ExportButtons
+          title="Sale Invoices"
+          filename="sale_invoices"
+          columns={[
+            { key: 'invoice_number', label: 'Invoice #' },
+            { key: 'date', label: 'Date' },
+            { key: 'channel', label: 'Channel' },
+            { key: 'customer', label: 'Customer' },
+            { key: 'subtotal', label: 'Subtotal' },
+            { key: 'gst_amount', label: 'GST' },
+            { key: 'total', label: 'Total' },
+            { key: 'paid_amount', label: 'Paid' },
+            { key: 'balance', label: 'Balance' },
+            { key: 'payment_type', label: 'Payment' },
+          ]}
+          rows={exportRows}
+        />
+      </div>
+
+      <div className="card">
+        {error && <div className="inline-error">{error}</div>}
+        {loading ? (
+          <p className="muted">Loading…</p>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Invoice #</th>
+                <th>Date</th>
+                <th>Channel</th>
+                <th>Customer</th>
+                <th>Total</th>
+                <th>Balance</th>
+                <th>Payment</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <Fragment key={r.id}>
+                  <tr>
+                    <td>
+                      <button className="btn-secondary" onClick={() => toggleExpand(r.id)}>
+                        {expandedId === r.id ? '−' : '+'}
+                      </button>
+                    </td>
+                    <td>{r.invoice_number}</td>
+                    <td>{formatDate(r.date)}</td>
+                    <td>{r.channel}</td>
+                    <td>{r.customers?.name ?? '—'}</td>
+                    <td>{formatMoney(r.total)}</td>
+                    <td>
+                      <span className={r.balance > 0 ? 'tag tag-warning' : 'tag tag-success'}>
+                        {formatMoney(r.balance)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={r.payment_type === 'Credit' ? 'tag tag-warning' : 'tag tag-success'}>
+                        {r.payment_type}
+                      </span>
+                    </td>
+                    <td>
+                      <button className="btn-secondary" onClick={() => setViewingInvoiceId(r.id)}>
+                        View / Print
+                      </button>
+                    </td>
+                  </tr>
+                  {expandedId === r.id && (
+                    <tr>
+                      <td></td>
+                      <td colSpan={8}>
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>Item</th>
+                              <th>Qty</th>
+                              <th>Unit</th>
+                              <th>Rate</th>
+                              <th>Discount</th>
+                              <th>GST</th>
+                              <th>Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(itemsByInvoice[r.id] ?? []).map((it) => (
+                              <tr key={it.id}>
+                                <td>{it.products?.name ?? '—'}</td>
+                                <td>{it.quantity}</td>
+                                <td>{it.unit}</td>
+                                <td>{formatMoney(it.rate)}</td>
+                                <td>{formatMoney(it.discount)}</td>
+                                <td>{it.gst_applicable ? formatMoney(it.gst_amount) : '—'}</td>
+                                <td>{formatMoney(it.amount)}</td>
+                              </tr>
+                            ))}
+                            {(itemsByInvoice[r.id] ?? []).length === 0 && (
+                              <tr>
+                                <td colSpan={7} className="muted">
+                                  No line items.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="muted">
+                    No sale invoices in this range.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}

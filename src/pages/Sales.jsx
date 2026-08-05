@@ -1,6 +1,6 @@
 import Tabs from '../components/Tabs'
-import NewSaleTab from './sales/NewSaleTab'
-import SalesListTab from './sales/SalesListTab'
+import NewSaleInvoiceTab from './sales/NewSaleInvoiceTab'
+import SaleInvoicesListTab from './sales/SaleInvoicesListTab'
 
 export default function Sales() {
   return (
@@ -8,8 +8,8 @@ export default function Sales() {
       <h1>Sales</h1>
       <Tabs
         tabs={[
-          { key: 'new', label: 'New Sale', content: <NewSaleTab /> },
-          { key: 'list', label: 'Sales List', content: <SalesListTab /> },
+          { key: 'new', label: 'New Sale Invoice', content: <NewSaleInvoiceTab /> },
+          { key: 'list', label: 'Sale Invoices', content: <SaleInvoicesListTab /> },
         ]}
       />
     </div>

@@ -293,3 +293,71 @@ table.data-table {
   margin-bottom: 1rem;
   flex-wrap: wrap;
 }
+
+/* ---------- Invoice ---------- */
+
+.invoice-sheet {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 2.5rem;
+  max-width: 800px;
+}
+
+.invoice-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 2px solid var(--primary);
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.invoice-customer {
+  margin-bottom: 1.25rem;
+}
+
+.invoice-items {
+  margin-bottom: 1.25rem;
+}
+
+.invoice-totals {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1.5rem;
+}
+
+.invoice-totals table td {
+  padding: 0.3rem 0.75rem;
+  text-align: right;
+}
+.invoice-totals table td:first-child {
+  text-align: left;
+  color: var(--muted);
+}
+
+.invoice-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.invoice-signature {
+  margin-top: 2.5rem;
+  color: var(--muted);
+}
+
+@media print {
+  .no-print,
+  .sidebar {
+    display: none !important;
+  }
+  .main-content {
+    padding: 0;
+  }
+  .invoice-sheet {
+    border: none;
+    box-shadow: none;
+    max-width: none;
+  }
+}

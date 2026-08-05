@@ -29,7 +29,7 @@ export default function Closing() {
     setError('')
 
     const [salesRes, pettyRes, closingRes, prevClosingRes, outstandingRes, payableRes] = await Promise.all([
-      supabase.from('sales').select('total, payment_type').eq('date', date),
+      supabase.from('sale_invoices').select('total, payment_type').eq('date', date),
       supabase
         .from('petty_cash_entries')
         .select('amount')

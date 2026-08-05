@@ -21,7 +21,7 @@ export default function Dashboard() {
     setLoading(true)
     const today = toISODate()
     const [salesRes, stockRes, outstandingRes, payableRes, pettyRes] = await Promise.all([
-      supabase.from('sales').select('total').eq('date', today),
+      supabase.from('sale_invoices').select('total').eq('date', today),
       supabase.from('v_current_stock').select('current_stock, low_stock_threshold').eq('is_active', true),
       supabase.from('v_customer_outstanding').select('outstanding'),
       supabase.from('v_supplier_outstanding').select('outstanding'),

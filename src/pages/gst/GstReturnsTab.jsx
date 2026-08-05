@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { fetchRateHistory, buildRateResolver, netOfGst, gstPortion, round2 } from '../../lib/gst'
+import { round2 } from '../../lib/gst'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
 
 // Suggests the next unfiled calendar quarter, e.g. if today is in Q1 it suggests Q1 (Jan-Mar).
@@ -62,15 +62,12 @@ export default function GstReturnsTab() {
     setGenerating(true)
     setError('')
 
-    const rateRows = await fetchRateHistory()
-    const getRate = buildRateResolver(rateRows)
-
-    const [{ data: sales, error: salesErr }, { data: purchaseItems, error: purchErr }] = await Promise.all([
+    const [{ data: saleItems, error: salesErr }, { data: purchaseItems, error: purchErr }] = await Promise.all([
       supabase
-        .from('sales')
-        .select('date, total, gst_applicable')
-        .gte('date', form.period_start)
-        .lte('date', form.period_end),
+        .from('sale_invoice_items')
+        .select('amount, gst_amount, gst_applicable, sale_invoices!inner(date)')
+        .gte('sale_invoices.date', form.period_start)
+        .lte('sale_invoices.date', form.period_end),
       supabase
         .from('purchase_invoice_items')
         .select('amount, gst_amount, gst_applicable, purchase_invoices!inner(date)')
@@ -84,17 +81,16 @@ export default function GstReturnsTab() {
       return
     }
 
+    // Both sale and purchase invoice line items store amount (excl. GST) and gst_amount
+    // directly — GST is added on top at entry time, so no extraction needed here.
     let box1 = 0
     let box6 = 0
-    ;(sales ?? []).forEach((s) => {
-      if (!s.gst_applicable) return
-      const rate = getRate(s.date)
-      box1 += netOfGst(s.total, rate)
-      box6 += gstPortion(s.total, rate)
+    ;(saleItems ?? []).forEach((it) => {
+      if (!it.gst_applicable) return
+      box1 += it.amount
+      box6 += it.gst_amount ?? 0
     })
 
-    // Purchase invoice line items store amount (excl. GST) and gst_amount directly —
-    // GST is added on top at entry time, so no extraction needed here.
     let box5 = 0
     let box7 = 0
     ;(purchaseItems ?? []).forEach((it) => {
