@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { COMPANY } from '../lib/companyInfo'
 
 export default function Login() {
   const { session, signIn } = useAuth()
@@ -28,7 +29,7 @@ export default function Login() {
   return (
     <div className="auth-screen">
       <form className="auth-card" onSubmit={handleSubmit}>
-        <h1>Kari Kadai</h1>
+        <h1>{COMPANY.name}</h1>
         <p className="auth-subtitle">Inventory · Sales · Accounting</p>
 
         <label>

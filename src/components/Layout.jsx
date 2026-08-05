@@ -1,5 +1,7 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { COMPANY } from '../lib/companyInfo'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', end: true },
@@ -18,12 +20,39 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const { user, signOut, devAutoLoginActive } = useAuth()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const location = useLocation()
+
+  // Close the mobile sidebar whenever the route changes (e.g. after tapping a nav link).
+  useEffect(() => {
+    setSidebarOpen(false)
+  }, [location.pathname])
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <header className="mobile-topbar no-print">
+        <button
+          className="hamburger-btn"
+          aria-label="Open menu"
+          onClick={() => setSidebarOpen(true)}
+        >
+          ☰
+        </button>
+        <span className="mobile-topbar-title">{COMPANY.name}</span>
+      </header>
+
+      {sidebarOpen && <div className="sidebar-backdrop no-print" onClick={() => setSidebarOpen(false)} />}
+
+      <aside className={sidebarOpen ? 'sidebar sidebar-open no-print' : 'sidebar no-print'}>
         <div className="sidebar-header">
-          <h2>Kari Kadai</h2>
+          <h2>{COMPANY.name}</h2>
+          <button
+            className="sidebar-close-btn"
+            aria-label="Close menu"
+            onClick={() => setSidebarOpen(false)}
+          >
+            ✕
+          </button>
         </div>
         {devAutoLoginActive && (
           <div className="dev-banner">DEV AUTO-LOGIN — local only, never in production</div>
