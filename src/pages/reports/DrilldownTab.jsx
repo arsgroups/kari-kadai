@@ -62,22 +62,25 @@ export default function DrilldownTab() {
         }))
       )
     } else if (reportType === 'purchases') {
+      // One row per purchase invoice line item (a single invoice can span multiple products).
       let q = supabase
-        .from('purchases')
-        .select('date, amount_before_gst, gst_amount, total, payment_type, products(name), suppliers(name)')
-        .gte('date', from)
-        .lte('date', to)
+        .from('purchase_invoice_items')
+        .select(
+          'amount, gst_amount, gst_applicable, products(name), purchase_invoices!inner(date, payment_type, suppliers(name))'
+        )
+        .gte('purchase_invoices.date', from)
+        .lte('purchase_invoices.date', to)
       if (productId) q = q.eq('product_id', productId)
-      const { data } = await q.order('date', { ascending: false }).limit(500)
+      const { data } = await q.limit(500)
       setRows(
         (data ?? []).map((r) => ({
-          date: formatDate(r.date),
+          date: formatDate(r.purchase_invoices?.date),
           product: r.products?.name ?? '',
-          amount_before_gst: r.amount_before_gst,
-          gst_amount: r.gst_amount,
-          total: r.total,
-          supplier: r.suppliers?.name,
-          payment_type: r.payment_type,
+          amount_before_gst: r.amount,
+          gst_amount: r.gst_applicable ? r.gst_amount : 0,
+          total: r.amount + (r.gst_applicable ? r.gst_amount : 0),
+          supplier: r.purchase_invoices?.suppliers?.name,
+          payment_type: r.purchase_invoices?.payment_type,
         }))
       )
     } else {

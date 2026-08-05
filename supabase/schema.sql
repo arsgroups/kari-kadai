@@ -179,29 +179,76 @@ create table if not exists import_batches (
   created_at timestamptz not null default now()
 );
 
-create table if not exists purchases (
+create sequence if not exists purchase_invoice_seq start 1;
+
+create table if not exists purchase_invoices (
   id uuid primary key default gen_random_uuid(),
-  date date not null default current_date,
+  invoice_number text unique,
   supplier_id uuid not null references suppliers(id),
-  -- Product/quantity are optional: quick bill entry only needs an amount, but
-  -- CSV import (and anyone who wants stock-in tracked) can still supply these.
-  product_id uuid references products(id),
-  quantity numeric,
-  cost_price numeric, -- legacy per-unit field, kept for CSV import compatibility
-  amount_before_gst numeric not null,
-  gst_amount numeric not null default 0,
-  total numeric generated always as (amount_before_gst + gst_amount) stored,
+  date date not null default current_date,
   payment_type text not null check (payment_type in ('Cash','Bank','Credit')),
+  subtotal numeric not null default 0,
+  gst_amount numeric not null default 0,
+  total numeric generated always as (subtotal + gst_amount) stored,
   source text not null default 'manual' check (source in ('manual','imported')),
   import_batch_id uuid references import_batches(id),
-  gst_applicable boolean not null default true,
   note text,
   created_at timestamptz not null default now()
 );
 
-create index if not exists idx_purchases_date on purchases(date);
-create index if not exists idx_purchases_supplier on purchases(supplier_id);
-create index if not exists idx_purchases_product on purchases(product_id);
+create table if not exists purchase_invoice_items (
+  id uuid primary key default gen_random_uuid(),
+  purchase_invoice_id uuid not null references purchase_invoices(id) on delete cascade,
+  product_id uuid references products(id),
+  quantity numeric not null,
+  unit text,
+  rate numeric not null,
+  discount numeric not null default 0,
+  gst_applicable boolean not null default true,
+  gst_amount numeric not null default 0,
+  amount numeric generated always as (quantity * rate - discount) stored,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_purchase_invoices_date on purchase_invoices(date);
+create index if not exists idx_purchase_invoices_supplier on purchase_invoices(supplier_id);
+create index if not exists idx_purchase_invoice_items_invoice on purchase_invoice_items(purchase_invoice_id);
+create index if not exists idx_purchase_invoice_items_product on purchase_invoice_items(product_id);
+
+create or replace function generate_purchase_invoice_number() returns trigger as $$
+begin
+  if new.invoice_number is null then
+    new.invoice_number := 'PINV-' || lpad(nextval('purchase_invoice_seq')::text, 5, '0');
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_generate_purchase_invoice_number on purchase_invoices;
+create trigger trg_generate_purchase_invoice_number
+  before insert on purchase_invoices
+  for each row execute function generate_purchase_invoice_number();
+
+create or replace function trg_purchase_item_stock_movement() returns trigger as $$
+declare
+  factor numeric;
+  invoice_date date;
+begin
+  if new.product_id is null then
+    return new;
+  end if;
+  select purchase_to_inventory_factor into factor from products where id = new.product_id;
+  select date into invoice_date from purchase_invoices where id = new.purchase_invoice_id;
+  insert into stock_movements (date, product_id, movement_type, quantity, reference_type, reference_id)
+  values (invoice_date, new.product_id, 'purchase', abs(new.quantity) * coalesce(factor, 1), 'purchase', new.id);
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists purchase_item_stock_movement on purchase_invoice_items;
+create trigger purchase_item_stock_movement
+  after insert on purchase_invoice_items
+  for each row execute function trg_purchase_item_stock_movement();
 
 create table if not exists supplier_payments (
   id uuid primary key default gen_random_uuid(),
@@ -334,21 +381,6 @@ create trigger sales_stock_movement
   after insert on sales
   for each row execute function trg_sale_stock_movement();
 
-create or replace function trg_purchase_stock_movement() returns trigger as $$
-begin
-  if new.product_id is not null and new.quantity is not null then
-    insert into stock_movements (date, product_id, movement_type, quantity, reference_type, reference_id)
-    values (new.date, new.product_id, 'purchase', abs(new.quantity), 'purchase', new.id);
-  end if;
-  return new;
-end;
-$$ language plpgsql;
-
-drop trigger if exists purchases_stock_movement on purchases;
-create trigger purchases_stock_movement
-  after insert on purchases
-  for each row execute function trg_purchase_stock_movement();
-
 -- ============================================================================
 -- VIEWS (security_invoker so they respect the querying user's RLS)
 -- ============================================================================
@@ -386,7 +418,7 @@ create or replace view v_supplier_outstanding
 select
   s.id as supplier_id,
   s.name,
-  coalesce((select sum(p.total) from purchases p where p.supplier_id = s.id and p.payment_type = 'Credit'), 0)
+  coalesce((select sum(pi.total) from purchase_invoices pi where pi.supplier_id = s.id and pi.payment_type = 'Credit'), 0)
     - coalesce((select sum(sp.amount) from supplier_payments sp where sp.supplier_id = s.id), 0) as outstanding
 from suppliers s;
 
@@ -408,7 +440,7 @@ begin
   for t in
     select unnest(array[
       'products','stock_movements','stock_verifications','customers','sales',
-      'customer_payments','suppliers','purchases','supplier_payments',
+      'customer_payments','suppliers','purchase_invoices','purchase_invoice_items','supplier_payments',
       'manual_accounting_totals','petty_cash_expense_types','petty_cash_entries',
       'expense_categories','monthly_expenses','daily_closing','gst_rate_history',
       'gst_returns','csv_import_mappings','import_batches','customer_item_prices'

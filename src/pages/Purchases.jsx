@@ -1,6 +1,6 @@
 import Tabs from '../components/Tabs'
-import NewPurchaseTab from './purchases/NewPurchaseTab'
-import PurchasesListTab from './purchases/PurchasesListTab'
+import NewPurchaseInvoiceTab from './purchases/NewPurchaseInvoiceTab'
+import PurchaseInvoicesListTab from './purchases/PurchaseInvoicesListTab'
 
 export default function Purchases() {
   return (
@@ -8,8 +8,8 @@ export default function Purchases() {
       <h1>Purchases</h1>
       <Tabs
         tabs={[
-          { key: 'new', label: 'New Purchase', content: <NewPurchaseTab /> },
-          { key: 'list', label: 'Purchases List', content: <PurchasesListTab /> },
+          { key: 'new', label: 'New Purchase Invoice', content: <NewPurchaseInvoiceTab /> },
+          { key: 'list', label: 'Purchase Invoices', content: <PurchaseInvoicesListTab /> },
         ]}
       />
     </div>

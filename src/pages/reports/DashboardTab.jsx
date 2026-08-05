@@ -53,7 +53,7 @@ export default function DashboardTab() {
         .from('sales')
         .select('date, total, channel, products(name)')
         .gte('date', toISODate(since)),
-      supabase.from('purchases').select('date, total').gte('date', toISODate(since)),
+      supabase.from('purchase_invoices').select('date, total').gte('date', toISODate(since)),
     ])
 
     const salesRows = sales ?? []

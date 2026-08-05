@@ -136,23 +136,24 @@ export default function CsvImportTab() {
         parsedDate = `${yyyy}-${mm}-${dd}`
       }
 
-      // Cost Price here is treated as before-GST (matches how manual Purchase entry
+      // Cost Price here is treated as before-GST (matches how manual Purchase Invoice entry
       // works), so GST is calculated and added on top, not extracted out of it.
       const gstApplicable = supplier.gst_registered ?? true
       const amountBeforeGst = round2(quantity * costPrice)
       const gstAmount = gstApplicable ? round2(amountBeforeGst * (getRate(parsedDate) / 100)) : 0
 
+      // Each CSV row becomes its own single-line invoice (the export has no
+      // invoice-number column to group rows by).
       rowsToInsert.push({
         date: parsedDate,
         supplier_id: supplier.id,
         product_id: product.id,
         quantity,
-        cost_price: costPrice,
+        unit_rate: costPrice,
         amount_before_gst: amountBeforeGst,
         gst_amount: gstAmount,
         gst_applicable: gstApplicable,
         payment_type: paymentType,
-        source: 'imported',
       })
     }
 
@@ -195,17 +196,47 @@ export default function CsvImportTab() {
       return
     }
 
-    const rowsWithBatch = rowsToInsert.map((r) => ({ ...r, import_batch_id: batch.id }))
-    const { data: inserted, error: insertErr } = await supabase.from('purchases').insert(rowsWithBatch).select()
+    let insertedCount = 0
+    for (const row of rowsToInsert) {
+      const { data: invoice, error: invErr } = await supabase
+        .from('purchase_invoices')
+        .insert({
+          date: row.date,
+          supplier_id: row.supplier_id,
+          payment_type: row.payment_type,
+          subtotal: row.amount_before_gst,
+          gst_amount: row.gst_amount,
+          source: 'imported',
+          import_batch_id: batch.id,
+        })
+        .select()
+        .single()
 
-    if (insertErr) {
-      setError(insertErr.message)
-      setCommitting(false)
-      return
+      if (invErr) {
+        setError(invErr.message)
+        setCommitting(false)
+        return
+      }
+
+      const { error: itemErr } = await supabase.from('purchase_invoice_items').insert({
+        purchase_invoice_id: invoice.id,
+        product_id: row.product_id,
+        quantity: row.quantity,
+        rate: row.unit_rate,
+        gst_applicable: row.gst_applicable,
+        gst_amount: row.gst_amount,
+      })
+
+      if (itemErr) {
+        setError(itemErr.message)
+        setCommitting(false)
+        return
+      }
+      insertedCount += 1
     }
 
-    // Stock movements are written automatically by a database trigger per row (see supabase/schema.sql).
-    setResult({ inserted: inserted.length, unmatchedProducts: [...unmatchedProducts] })
+    // Stock movements are written automatically by a database trigger per line item.
+    setResult({ inserted: insertedCount, unmatchedProducts: [...unmatchedProducts] })
     setCommitting(false)
     loadMappings()
   }
@@ -309,7 +340,7 @@ export default function CsvImportTab() {
       {result && (
         <div className="card">
           <h3>Import Complete</h3>
-          <p>Imported {result.inserted} purchase rows.</p>
+          <p>Imported {result.inserted} purchase invoices (one line item each).</p>
           {result.unmatchedProducts.length > 0 && (
             <div>
               <p className="inline-error">

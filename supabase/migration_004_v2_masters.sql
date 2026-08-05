@@ -71,7 +71,11 @@ create trigger product_opening_stock
   after insert on products
   for each row execute function trg_product_opening_stock();
 
-create or replace view v_current_stock
+-- CREATE OR REPLACE can only append columns at the end, not insert one in the
+-- middle (item_code goes right after product_id here) — so drop and recreate.
+drop view if exists v_current_stock;
+
+create view v_current_stock
   with (security_invoker = true) as
 select
   p.id as product_id,

@@ -27,7 +27,7 @@ export default function PnLTab() {
 
     const [{ data: sales }, { data: purchases }, { data: pettyCash }, { data: monthlyExpenses }] = await Promise.all([
       supabase.from('sales').select('date, total, gst_applicable').gte('date', from).lte('date', to),
-      supabase.from('purchases').select('date, total, amount_before_gst, gst_applicable').gte('date', from).lte('date', to),
+      supabase.from('purchase_invoices').select('date, total, subtotal').gte('date', from).lte('date', to),
       supabase
         .from('petty_cash_entries')
         .select('amount')
@@ -46,17 +46,9 @@ export default function PnLTab() {
       revenueNet += s.gst_applicable ? netOfGst(s.total, getRate(s.date)) : s.total
     })
 
-    // Purchases now store amount_before_gst directly (GST is added on top, not backed out).
-    // Older rows from before that change won't have it set, so fall back to extracting GST
-    // from the total the same way Sales still does.
-    let cogsNet = 0
-    ;(purchases ?? []).forEach((p) => {
-      if (p.amount_before_gst != null) {
-        cogsNet += p.amount_before_gst
-      } else {
-        cogsNet += p.gst_applicable ? netOfGst(p.total, getRate(p.date)) : p.total
-      }
-    })
+    // purchase_invoices.subtotal is already GST-exclusive (GST is added on top at entry
+    // time), so it's used directly for COGS with no extraction needed.
+    const cogsNet = (purchases ?? []).reduce((sum, p) => sum + p.subtotal, 0)
 
     const pettyTotal = (pettyCash ?? []).reduce((sum, p) => sum + p.amount, 0)
     const monthlyTotal = (monthlyExpenses ?? []).reduce((sum, e) => sum + e.amount, 0)

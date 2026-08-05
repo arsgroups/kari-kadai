@@ -65,17 +65,17 @@ export default function GstReturnsTab() {
     const rateRows = await fetchRateHistory()
     const getRate = buildRateResolver(rateRows)
 
-    const [{ data: sales, error: salesErr }, { data: purchases, error: purchErr }] = await Promise.all([
+    const [{ data: sales, error: salesErr }, { data: purchaseItems, error: purchErr }] = await Promise.all([
       supabase
         .from('sales')
         .select('date, total, gst_applicable')
         .gte('date', form.period_start)
         .lte('date', form.period_end),
       supabase
-        .from('purchases')
-        .select('date, total, amount_before_gst, gst_amount, gst_applicable')
-        .gte('date', form.period_start)
-        .lte('date', form.period_end),
+        .from('purchase_invoice_items')
+        .select('amount, gst_amount, gst_applicable, purchase_invoices!inner(date)')
+        .gte('purchase_invoices.date', form.period_start)
+        .lte('purchase_invoices.date', form.period_end),
     ])
 
     if (salesErr || purchErr) {
@@ -93,21 +93,14 @@ export default function GstReturnsTab() {
       box6 += gstPortion(s.total, rate)
     })
 
-    // Purchases now store amount_before_gst / gst_amount directly (GST is added on top at
-    // entry time). Fall back to extracting it from the total for any older rows that predate
-    // that change.
+    // Purchase invoice line items store amount (excl. GST) and gst_amount directly —
+    // GST is added on top at entry time, so no extraction needed here.
     let box5 = 0
     let box7 = 0
-    ;(purchases ?? []).forEach((p) => {
-      if (!p.gst_applicable) return
-      if (p.amount_before_gst != null) {
-        box5 += p.amount_before_gst
-        box7 += p.gst_amount ?? 0
-      } else {
-        const rate = getRate(p.date)
-        box5 += netOfGst(p.total, rate)
-        box7 += gstPortion(p.total, rate)
-      }
+    ;(purchaseItems ?? []).forEach((it) => {
+      if (!it.gst_applicable) return
+      box5 += it.amount
+      box7 += it.gst_amount ?? 0
     })
 
     box1 = round2(box1)
