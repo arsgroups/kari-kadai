@@ -1,12 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Login() {
-  const { signIn } = useAuth()
+  const { session, signIn } = useAuth()
+  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // Covers both a fresh successful sign-in and landing on /login while already
+  // authenticated (e.g. browser back button) — either way, move on to the app.
+  useEffect(() => {
+    if (session) navigate('/', { replace: true })
+  }, [session, navigate])
 
   async function handleSubmit(e) {
     e.preventDefault()
