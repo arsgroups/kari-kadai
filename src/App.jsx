@@ -14,6 +14,7 @@ import Closing from './pages/Closing'
 import Gst from './pages/Gst'
 import Reports from './pages/Reports'
 import Import from './pages/Import'
+import Settings from './pages/Settings'
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="gst" element={<Gst />} />
             <Route path="reports" element={<Reports />} />
             <Route path="import" element={<Import />} />
+            <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>
       </AuthProvider>

@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { to: '/gst', label: 'GST' },
   { to: '/reports', label: 'Reports' },
   { to: '/import', label: 'Import from Accounting App' },
+  { to: '/settings', label: 'Settings' },
 ]
 
 export default function Layout() {
