@@ -41,7 +41,7 @@ export default function Dashboard() {
     ] = await Promise.all([
       supabase.from('sale_invoices').select('total, subtotal').eq('date', today),
       supabase.from('purchase_invoices').select('total, subtotal').eq('date', today),
-      supabase.from('petty_cash_entries').select('amount').eq('date', today).eq('entry_type', 'expense'),
+      supabase.from('expenses').select('amount').eq('date', today).eq('entry_type', 'expense'),
       supabase.from('v_current_stock').select('current_stock, low_stock_threshold').eq('is_active', true),
       supabase.from('v_customer_outstanding').select('outstanding'),
       supabase.from('v_supplier_outstanding').select('outstanding'),

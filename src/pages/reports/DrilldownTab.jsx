@@ -88,18 +88,19 @@ export default function DrilldownTab() {
       )
     } else {
       let q = supabase
-        .from('monthly_expenses')
-        .select('month, amount, note, expense_categories(name)')
-        .gte('month', from.slice(0, 7) + '-01')
-        .lte('month', to.slice(0, 7) + '-01')
+        .from('expenses')
+        .select('date, amount, description, remarks, expense_categories(name)')
+        .eq('entry_type', 'expense')
+        .gte('date', from)
+        .lte('date', to)
       if (categoryId) q = q.eq('category_id', categoryId)
-      const { data } = await q.order('month', { ascending: false })
+      const { data } = await q.order('date', { ascending: false })
       setRows(
         (data ?? []).map((r) => ({
-          month: r.month?.slice(0, 7),
+          date: formatDate(r.date),
           category: r.expense_categories?.name,
           amount: r.amount,
-          note: r.note,
+          note: r.description || r.remarks || '',
         }))
       )
     }
@@ -126,7 +127,7 @@ export default function DrilldownTab() {
       { key: 'payment_type', label: 'Payment' },
     ],
     expenses: [
-      { key: 'month', label: 'Month' },
+      { key: 'date', label: 'Date' },
       { key: 'category', label: 'Category' },
       { key: 'amount', label: 'Amount' },
       { key: 'note', label: 'Note' },
@@ -145,7 +146,7 @@ export default function DrilldownTab() {
             <select value={reportType} onChange={(e) => setReportType(e.target.value)}>
               <option value="sales">Sales</option>
               <option value="purchases">Purchases</option>
-              <option value="expenses">Monthly Expenses</option>
+              <option value="expenses">Expenses</option>
             </select>
           </label>
           <label>

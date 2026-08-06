@@ -14,11 +14,12 @@ export default function MonthlySummaryTab() {
   async function load() {
     setLoading(true)
     const { data } = await supabase
-      .from('monthly_expenses')
-      .select('month, amount, expense_categories(classification)')
+      .from('expenses')
+      .select('date, amount, expense_categories(classification)')
+      .eq('entry_type', 'expense')
     const byMonth = {}
     ;(data ?? []).forEach((row) => {
-      const key = row.month?.slice(0, 7)
+      const key = row.date?.slice(0, 7)
       if (!byMonth[key]) byMonth[key] = { month: key, fixed: 0, variable: 0 }
       byMonth[key][row.expense_categories?.classification ?? 'variable'] += row.amount
     })

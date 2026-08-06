@@ -325,30 +325,7 @@ create table if not exists manual_accounting_totals (
 );
 
 -- ============================================================================
--- 4. PETTY CASH
--- ============================================================================
-
-create table if not exists petty_cash_expense_types (
-  id uuid primary key default gen_random_uuid(),
-  name text not null unique,
-  is_active boolean not null default true,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists petty_cash_entries (
-  id uuid primary key default gen_random_uuid(),
-  date date not null default current_date,
-  entry_type text not null check (entry_type in ('topup','expense')),
-  expense_type_id uuid references petty_cash_expense_types(id),
-  amount numeric not null,
-  note text,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists idx_petty_cash_date on petty_cash_entries(date);
-
--- ============================================================================
--- 5. MONTHLY FIXED & VARIABLE EXPENSES
+-- 4. EXPENSES (petty cash + monthly fixed/variable, unified)
 -- ============================================================================
 
 create table if not exists expense_categories (
@@ -359,16 +336,20 @@ create table if not exists expense_categories (
   created_at timestamptz not null default now()
 );
 
-create table if not exists monthly_expenses (
+create table if not exists expenses (
   id uuid primary key default gen_random_uuid(),
-  month date not null, -- store as first-of-month
-  category_id uuid not null references expense_categories(id),
+  date date not null default current_date,
+  entry_type text not null default 'expense' check (entry_type in ('expense', 'topup')),
+  category_id uuid references expense_categories(id), -- null for topups
+  description text,
   amount numeric not null,
-  note text,
+  payment_method text check (payment_method in ('Cash', 'Bank')),
+  remarks text,
   created_at timestamptz not null default now()
 );
 
-create index if not exists idx_monthly_expenses_month on monthly_expenses(month);
+create index if not exists idx_expenses_date on expenses(date);
+create index if not exists idx_expenses_category on expenses(category_id);
 
 -- ============================================================================
 -- 6. DAILY CLOSING
@@ -469,7 +450,7 @@ create or replace view v_petty_cash_balance
 select
   coalesce(sum(case when entry_type = 'topup' then amount else 0 end), 0)
     - coalesce(sum(case when entry_type = 'expense' then amount else 0 end), 0) as balance
-from petty_cash_entries;
+from expenses;
 
 -- ============================================================================
 -- ROW LEVEL SECURITY — any authenticated (logged-in) user has full access
@@ -484,8 +465,8 @@ begin
       'products','stock_movements','stock_verifications','customers',
       'sale_invoices','sale_invoice_items',
       'customer_payments','suppliers','purchase_invoices','purchase_invoice_items','supplier_payments',
-      'manual_accounting_totals','petty_cash_expense_types','petty_cash_entries',
-      'expense_categories','monthly_expenses','daily_closing','gst_rate_history',
+      'manual_accounting_totals','expenses',
+      'expense_categories','daily_closing','gst_rate_history',
       'gst_returns','csv_import_mappings','import_batches','customer_item_prices'
     ])
   loop
@@ -510,19 +491,20 @@ insert into products (name, category, unit, purchase_unit, sales_unit, low_stock
   ('Beef', 'Beef', 'Kg', 'Kg', 'Kg', 10)
 on conflict do nothing;
 
-insert into petty_cash_expense_types (name) values
-  ('Fuel'), ('Stationery'), ('Tea/Coffee'), ('Others')
-on conflict (name) do nothing;
-
 insert into expense_categories (name, classification) values
   ('Salary', 'fixed'),
   ('Rent', 'fixed'),
   ('Incentives', 'variable'),
   ('Fuel', 'variable'),
+  ('Transport', 'variable'),
+  ('Utilities', 'variable'),
+  ('Maintenance', 'variable'),
   ('Refreshments', 'variable'),
+  ('Stationery', 'variable'),
   ('CPF', 'variable'),
   ('Levy', 'variable'),
   ('GST Payable', 'variable'),
+  ('Miscellaneous', 'variable'),
   ('Others', 'variable')
 on conflict (name) do nothing;
 

@@ -31,7 +31,7 @@ export default function Closing() {
     const [salesRes, pettyRes, closingRes, prevClosingRes, outstandingRes, payableRes] = await Promise.all([
       supabase.from('sale_invoices').select('total, payment_type').eq('date', date),
       supabase
-        .from('petty_cash_entries')
+        .from('expenses')
         .select('amount')
         .eq('date', date)
         .eq('entry_type', 'expense'),
