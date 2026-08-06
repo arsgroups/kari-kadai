@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { fetchRateHistory, buildRateResolver, round2 } from '../../lib/gst'
+import { conversionFactor } from '../../lib/units'
 import { toISODate, formatMoney } from '../../lib/format'
 import SaleInvoiceView from './SaleInvoiceView'
 
@@ -42,12 +43,27 @@ export default function NewSaleInvoiceTab() {
       .eq('is_active', true)
       .order('name')
       .then(({ data }) => setCustomers(data ?? []))
-    supabase
-      .from('products')
-      .select('id, name, sales_unit, default_selling_price')
-      .eq('is_active', true)
-      .order('name')
-      .then(({ data }) => setProducts(data ?? []))
+    Promise.all([
+      supabase
+        .from('products')
+        .select('id, name, unit, sales_unit, default_selling_price')
+        .eq('is_active', true)
+        .order('name'),
+      supabase.from('v_current_stock').select('product_id, current_stock'),
+    ]).then(([{ data: productData }, { data: stockData }]) => {
+      const stockByProduct = {}
+      ;(stockData ?? []).forEach((s) => {
+        stockByProduct[s.product_id] = s.current_stock
+      })
+      setProducts(
+        (productData ?? []).map((p) => ({
+          ...p,
+          // Convert stock from the inventory unit into this item's sales unit,
+          // so what's shown matches how it's actually sold (e.g. grams, not kg).
+          availableInSalesUnit: round2((stockByProduct[p.id] ?? 0) / conversionFactor(p.sales_unit, p.unit)),
+        }))
+      )
+    })
     fetchRateHistory().then((rates) => setGetRate(() => buildRateResolver(rates)))
   }, [])
 
@@ -269,6 +285,7 @@ export default function NewSaleInvoiceTab() {
             <th>Item</th>
             <th>Qty</th>
             <th>Unit</th>
+            <th>Available</th>
             <th>Price</th>
             <th>Discount</th>
             <th>GST?</th>
@@ -301,6 +318,18 @@ export default function NewSaleInvoiceTab() {
                 />
               </td>
               <td>{line.unit || '—'}</td>
+              <td>
+                {(() => {
+                  const product = products.find((p) => p.id === line.product_id)
+                  if (!product) return '—'
+                  const short = Number(line.quantity) > product.availableInSalesUnit
+                  return (
+                    <span className={short ? 'tag tag-danger' : 'tag tag-muted'}>
+                      {product.availableInSalesUnit} {product.sales_unit}
+                    </span>
+                  )
+                })()}
+              </td>
               <td>
                 <input
                   type="number"
