@@ -18,10 +18,10 @@ create table if not exists products (
   name text not null,
   category text not null default 'Others',
   description text,
-  unit text not null default 'kg', -- canonical inventory/stock unit
-  purchase_unit text not null default 'kg',
-  sales_unit text not null default 'kg',
-  -- how many inventory units are in 1 purchase/sales unit, e.g. 1 Carton = 30 pieces
+  unit text not null default 'Kg' check (unit in ('Unit', 'Kg', 'Gram')), -- canonical inventory/stock unit
+  purchase_unit text not null default 'Kg' check (purchase_unit in ('Unit', 'Kg', 'Gram')),
+  sales_unit text not null default 'Kg' check (sales_unit in ('Unit', 'Kg', 'Gram')),
+  -- Kg<->Gram converts at 1000; anything involving 'Unit' is 1:1 (see src/lib/units.js)
   purchase_to_inventory_factor numeric not null default 1,
   sales_to_inventory_factor numeric not null default 1,
   default_purchase_price numeric,
@@ -113,6 +113,7 @@ create table if not exists customer_item_prices (
   product_id uuid not null references products(id) on delete cascade,
   price numeric not null,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   unique (customer_id, product_id)
 );
 
@@ -501,12 +502,12 @@ end $$;
 -- SEED DATA
 -- ============================================================================
 
-insert into products (name, category, unit, low_stock_threshold) values
-  ('Mutton', 'Mutton', 'kg', 10),
-  ('Mutton Boneless', 'Mutton', 'kg', 10),
-  ('Lamb Boneless', 'Lamb', 'kg', 10),
-  ('Chicken', 'Chicken', 'kg', 10),
-  ('Beef', 'Beef', 'kg', 10)
+insert into products (name, category, unit, purchase_unit, sales_unit, low_stock_threshold) values
+  ('Mutton', 'Mutton', 'Kg', 'Kg', 'Kg', 10),
+  ('Mutton Boneless', 'Mutton', 'Kg', 'Kg', 'Kg', 10),
+  ('Lamb Boneless', 'Lamb', 'Kg', 'Kg', 'Kg', 10),
+  ('Chicken', 'Chicken', 'Kg', 'Kg', 'Kg', 10),
+  ('Beef', 'Beef', 'Kg', 'Kg', 'Kg', 10)
 on conflict do nothing;
 
 insert into petty_cash_expense_types (name) values

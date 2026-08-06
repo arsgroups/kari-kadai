@@ -1,25 +1,18 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatMoney } from '../../lib/format'
+import CustomerEditView from './CustomerEditView'
 
-const emptyForm = {
-  id: null,
-  name: '',
-  type: 'Restaurant',
-  mobile: '',
-  address: '',
-  credit_limit: '',
-  credit_days: '',
-  is_active: true,
-}
+const emptyForm = { name: '', type: 'Restaurant', mobile: '', address: '', credit_limit: '', credit_days: '' }
 
 export default function CustomerMasterTab() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [form, setForm] = useState(emptyForm)
-  const [showForm, setShowForm] = useState(false)
+  const [showNewForm, setShowNewForm] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [editingCustomerId, setEditingCustomerId] = useState(null)
 
   async function load() {
     setLoading(true)
@@ -36,22 +29,6 @@ export default function CustomerMasterTab() {
     load()
   }, [])
 
-  async function startEdit(row) {
-    const { data } = await supabase.from('customers').select('*').eq('id', row.customer_id).single()
-    if (!data) return
-    setForm({
-      id: data.id,
-      name: data.name,
-      type: data.type,
-      mobile: data.contact ?? '',
-      address: data.address ?? '',
-      credit_limit: data.credit_limit ?? '',
-      credit_days: data.credit_days ?? '',
-      is_active: data.is_active,
-    })
-    setShowForm(true)
-  }
-
   async function handleSubmit(e) {
     e.preventDefault()
     setSaving(true)
@@ -63,20 +40,29 @@ export default function CustomerMasterTab() {
       address: form.address || null,
       credit_limit: form.credit_limit === '' ? null : Number(form.credit_limit),
       credit_days: form.credit_days === '' ? null : Number(form.credit_days),
-      is_active: form.is_active,
     }
-    const { error } = form.id
-      ? await supabase.from('customers').update(payload).eq('id', form.id)
-      : await supabase.from('customers').insert(payload)
+    const { error } = await supabase.from('customers').insert(payload)
 
     setSaving(false)
     if (error) {
       setError(error.message)
       return
     }
-    setShowForm(false)
+    setShowNewForm(false)
     setForm(emptyForm)
     load()
+  }
+
+  if (editingCustomerId) {
+    return (
+      <CustomerEditView
+        customerId={editingCustomerId}
+        onDone={() => {
+          setEditingCustomerId(null)
+          load()
+        }}
+      />
+    )
   }
 
   return (
@@ -86,16 +72,16 @@ export default function CustomerMasterTab() {
           className="btn"
           onClick={() => {
             setForm(emptyForm)
-            setShowForm(true)
+            setShowNewForm(true)
           }}
         >
           + Add Customer
         </button>
       </div>
 
-      {showForm && (
+      {showNewForm && (
         <div className="card">
-          <h3>{form.id ? 'Edit Customer' : 'New Customer'}</h3>
+          <h3>New Customer</h3>
           <form className="form-grid" onSubmit={handleSubmit}>
             <label>
               Name
@@ -134,23 +120,11 @@ export default function CustomerMasterTab() {
                 onChange={(e) => setForm({ ...form, credit_days: e.target.value })}
               />
             </label>
-            {form.id && (
-              <label>
-                <span style={{ display: 'block', marginBottom: '0.3rem' }}>Status</span>
-                <select
-                  value={form.is_active ? 'active' : 'inactive'}
-                  onChange={(e) => setForm({ ...form, is_active: e.target.value === 'active' })}
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </label>
-            )}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button className="btn" type="submit" disabled={saving}>
                 {saving ? 'Saving…' : 'Save'}
               </button>
-              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
+              <button type="button" className="btn-secondary" onClick={() => setShowNewForm(false)}>
                 Cancel
               </button>
             </div>
@@ -188,7 +162,7 @@ export default function CustomerMasterTab() {
                     )}
                   </td>
                   <td>
-                    <button className="btn-secondary" onClick={() => startEdit(r)}>
+                    <button className="btn-secondary" onClick={() => setEditingCustomerId(r.customer_id)}>
                       Edit
                     </button>
                   </td>

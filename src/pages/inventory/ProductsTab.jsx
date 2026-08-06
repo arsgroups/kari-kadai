@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { toISODate } from '../../lib/format'
+import { UNIT_OPTIONS, conversionFactor } from '../../lib/units'
 
 const emptyForm = {
   id: null,
   name: '',
   category: '',
   description: '',
-  unit: 'kg',
-  purchase_unit: 'kg',
-  sales_unit: 'kg',
-  purchase_to_inventory_factor: 1,
-  sales_to_inventory_factor: 1,
+  unit: 'Kg',
+  purchase_unit: 'Kg',
+  sales_unit: 'Kg',
   default_purchase_price: '',
   default_selling_price: '',
   low_stock_threshold: 0,
@@ -53,8 +52,6 @@ export default function ProductsTab() {
       unit: data.unit,
       purchase_unit: data.purchase_unit,
       sales_unit: data.sales_unit,
-      purchase_to_inventory_factor: data.purchase_to_inventory_factor,
-      sales_to_inventory_factor: data.sales_to_inventory_factor,
       default_purchase_price: data.default_purchase_price ?? '',
       default_selling_price: data.default_selling_price ?? '',
       low_stock_threshold: data.low_stock_threshold,
@@ -80,11 +77,11 @@ export default function ProductsTab() {
       name: form.name,
       category: form.category || 'Others',
       description: form.description || null,
-      unit: form.unit || 'kg',
-      purchase_unit: form.purchase_unit || form.unit || 'kg',
-      sales_unit: form.sales_unit || form.unit || 'kg',
-      purchase_to_inventory_factor: Number(form.purchase_to_inventory_factor) || 1,
-      sales_to_inventory_factor: Number(form.sales_to_inventory_factor) || 1,
+      unit: form.unit || 'Kg',
+      purchase_unit: form.purchase_unit || form.unit || 'Kg',
+      sales_unit: form.sales_unit || form.unit || 'Kg',
+      purchase_to_inventory_factor: conversionFactor(form.purchase_unit, form.unit),
+      sales_to_inventory_factor: conversionFactor(form.sales_unit, form.unit),
       default_purchase_price: form.default_purchase_price === '' ? null : Number(form.default_purchase_price),
       default_selling_price: form.default_selling_price === '' ? null : Number(form.default_selling_price),
       low_stock_threshold: Number(form.low_stock_threshold) || 0,
@@ -165,48 +162,34 @@ export default function ProductsTab() {
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
             </label>
             <label>
-              Inventory Unit
-              <input
-                value={form.unit}
-                onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                placeholder="kg"
-              />
+              Inventory (Stock) Unit
+              <select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}>
+                {UNIT_OPTIONS.map((u) => (
+                  <option key={u} value={u}>
+                    {u === 'Unit' ? 'Per Unit' : u === 'Kg' ? 'Per Kg' : 'Per Gram (g)'}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Purchase Unit
-              <input
-                value={form.purchase_unit}
-                onChange={(e) => setForm({ ...form, purchase_unit: e.target.value })}
-                placeholder="e.g. Carton, KG"
-              />
-            </label>
-            <label>
-              1 Purchase Unit = how many Inventory Units?
-              <input
-                type="number"
-                step="0.0001"
-                min="0"
-                value={form.purchase_to_inventory_factor}
-                onChange={(e) => setForm({ ...form, purchase_to_inventory_factor: e.target.value })}
-              />
+              <select value={form.purchase_unit} onChange={(e) => setForm({ ...form, purchase_unit: e.target.value })}>
+                {UNIT_OPTIONS.map((u) => (
+                  <option key={u} value={u}>
+                    {u === 'Unit' ? 'Per Unit' : u === 'Kg' ? 'Per Kg' : 'Per Gram (g)'}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Sales Unit
-              <input
-                value={form.sales_unit}
-                onChange={(e) => setForm({ ...form, sales_unit: e.target.value })}
-                placeholder="e.g. Unit, KG"
-              />
-            </label>
-            <label>
-              1 Sales Unit = how many Inventory Units?
-              <input
-                type="number"
-                step="0.0001"
-                min="0"
-                value={form.sales_to_inventory_factor}
-                onChange={(e) => setForm({ ...form, sales_to_inventory_factor: e.target.value })}
-              />
+              <select value={form.sales_unit} onChange={(e) => setForm({ ...form, sales_unit: e.target.value })}>
+                {UNIT_OPTIONS.map((u) => (
+                  <option key={u} value={u}>
+                    {u === 'Unit' ? 'Per Unit' : u === 'Kg' ? 'Per Kg' : 'Per Gram (g)'}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Default Purchase Price
