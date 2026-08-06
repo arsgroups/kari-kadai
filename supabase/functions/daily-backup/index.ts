@@ -12,8 +12,12 @@
 //     Now), authenticated via the logged-in user's Supabase session.
 //
 // Required secrets (set via `supabase secrets set …`, never committed):
-//   BACKUP_TRIGGER_SECRET       — matches app.backup_trigger_secret in Postgres
-//   GOOGLE_SERVICE_ACCOUNT_JSON — the full JSON key file content, as one string
+//   BACKUP_TRIGGER_SECRET     — matches the 'backup_trigger_secret' Vault entry in Postgres
+//   GOOGLE_OAUTH_CLIENT_ID     — from a Google Cloud OAuth client (Desktop app type)
+//   GOOGLE_OAUTH_CLIENT_SECRET — from the same OAuth client
+//   GOOGLE_OAUTH_REFRESH_TOKEN — obtained once via Google's OAuth Playground, authorizing
+//                                your own Drive account (no service account needed —
+//                                this uploads as you, into a folder you already own)
 //
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided automatically to
 // every Edge Function — no need to set those yourself.
@@ -24,7 +28,9 @@ import * as XLSX from 'npm:xlsx@0.18.5'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const BACKUP_TRIGGER_SECRET = Deno.env.get('BACKUP_TRIGGER_SECRET')
-const GOOGLE_SERVICE_ACCOUNT_JSON = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+const GOOGLE_OAUTH_CLIENT_ID = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID')
+const GOOGLE_OAUTH_CLIENT_SECRET = Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET')
+const GOOGLE_OAUTH_REFRESH_TOKEN = Deno.env.get('GOOGLE_OAUTH_REFRESH_TOKEN')
 
 const BACKUP_TABLES = [
   'products',
@@ -58,8 +64,8 @@ Deno.serve(async (req) => {
   const date = body.date || new Date().toISOString().slice(0, 10)
   const dryRun = body.dryRun === true
 
-  if (!GOOGLE_SERVICE_ACCOUNT_JSON) {
-    return json({ error: 'GOOGLE_SERVICE_ACCOUNT_JSON secret is not set on this function' }, 500)
+  if (!GOOGLE_OAUTH_CLIENT_ID || !GOOGLE_OAUTH_CLIENT_SECRET || !GOOGLE_OAUTH_REFRESH_TOKEN) {
+    return json({ error: 'Google OAuth secrets are not fully set on this function' }, 500)
   }
 
   const { data: settings } = await admin.from('backup_settings').select('*').single()
@@ -197,57 +203,26 @@ function buildBackupFiles(date: string, t: Record<string, Record<string, unknown
 }
 
 // ---------------------------------------------------------------------------
-// Google Drive (service account auth + folder/file management)
+// Google Drive (OAuth refresh-token auth + folder/file management)
+//
+// Uploads as your own Google account (via a one-time-authorized refresh
+// token), not a service account — no key file, no sharing step, and it
+// isn't affected by organization policies that block service account keys.
 // ---------------------------------------------------------------------------
-
-function base64url(input: ArrayBuffer | string): string {
-  const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input)
-  let binary = ''
-  for (const b of bytes) binary += String.fromCharCode(b)
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-function pemToDer(pem: string): ArrayBuffer {
-  const b64 = pem.replace(/-----BEGIN PRIVATE KEY-----/, '').replace(/-----END PRIVATE KEY-----/, '').replace(/\s/g, '')
-  const binary = atob(b64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return bytes.buffer
-}
 
 let cachedToken: { token: string; expiresAt: number } | null = null
 
 async function getGoogleAccessToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.token
 
-  const account = JSON.parse(GOOGLE_SERVICE_ACCOUNT_JSON!)
-  const header = { alg: 'RS256', typ: 'JWT' }
-  const now = Math.floor(Date.now() / 1000)
-  const claims = {
-    iss: account.client_email,
-    scope: 'https://www.googleapis.com/auth/drive.file',
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: now,
-    exp: now + 3600,
-  }
-
-  const unsigned = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(claims))}`
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    pemToDer(account.private_key),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign']
-  )
-  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(unsigned))
-  const jwt = `${unsigned}.${base64url(signature)}`
-
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: jwt,
+      grant_type: 'refresh_token',
+      client_id: GOOGLE_OAUTH_CLIENT_ID!,
+      client_secret: GOOGLE_OAUTH_CLIENT_SECRET!,
+      refresh_token: GOOGLE_OAUTH_REFRESH_TOKEN!,
     }),
   })
   if (!res.ok) throw new Error(`Google auth failed: ${await res.text()}`)
