@@ -1,0 +1,127 @@
+import { useEffect, useState } from 'react'
+import { supabase } from '../../lib/supabaseClient'
+import { formatMoney } from '../../lib/format'
+import ExportButtons from '../../components/ExportButtons'
+
+export default function InventoryValuationTab() {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  async function load() {
+    setLoading(true)
+    const { data: stock } = await supabase
+      .from('v_current_stock')
+      .select('product_id, name, category, unit, current_stock, is_active')
+      .eq('is_active', true)
+      .order('name')
+
+    // Cost basis: most recent purchase rate for that item if available, else its
+    // default purchase price. This is a simple valuation, not true FIFO costing.
+    const enriched = await Promise.all(
+      (stock ?? []).map(async (p) => {
+        const { data: lastPurchase } = await supabase
+          .from('purchase_invoice_items')
+          .select('rate, created_at')
+          .eq('product_id', p.product_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        let costRate = lastPurchase?.rate
+        if (costRate == null) {
+          const { data: product } = await supabase
+            .from('products')
+            .select('default_purchase_price')
+            .eq('id', p.product_id)
+            .single()
+          costRate = product?.default_purchase_price ?? 0
+        }
+
+        return { ...p, costRate, value: (p.current_stock ?? 0) * (costRate ?? 0) }
+      })
+    )
+
+    setRows(enriched)
+    setLoading(false)
+  }
+
+  const totalValue = rows.reduce((sum, r) => sum + r.value, 0)
+
+  const exportRows = rows.map((r) => ({
+    name: r.name,
+    category: r.category,
+    current_stock: r.current_stock,
+    unit: r.unit,
+    cost_rate: r.costRate,
+    value: r.value,
+  }))
+
+  return (
+    <div>
+      <p className="muted" style={{ fontSize: '0.85rem' }}>
+        Valuation uses each item's most recent purchase rate (falling back to its default purchase
+        price if it's never been purchased) — a simple cost basis, not true FIFO layer costing.
+      </p>
+      <div className="toolbar">
+        <div className="tile" style={{ margin: 0 }}>
+          <div className="tile-label">Total Inventory Value</div>
+          <div className="tile-value">{formatMoney(totalValue)}</div>
+        </div>
+        <ExportButtons
+          title="Inventory Valuation"
+          filename="inventory_valuation"
+          columns={[
+            { key: 'name', label: 'Item' },
+            { key: 'category', label: 'Category' },
+            { key: 'current_stock', label: 'Current Stock' },
+            { key: 'unit', label: 'Unit' },
+            { key: 'cost_rate', label: 'Cost Rate' },
+            { key: 'value', label: 'Value' },
+          ]}
+          rows={exportRows}
+        />
+      </div>
+      <div className="card">
+        {loading ? (
+          <p className="muted">Loading…</p>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Category</th>
+                <th>Current Stock</th>
+                <th>Cost Rate</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.product_id}>
+                  <td>{r.name}</td>
+                  <td>{r.category}</td>
+                  <td>
+                    {r.current_stock} {r.unit}
+                  </td>
+                  <td>{formatMoney(r.costRate)}</td>
+                  <td>{formatMoney(r.value)}</td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted">
+                    No active items.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}

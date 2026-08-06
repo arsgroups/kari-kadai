@@ -3,7 +3,7 @@ import { exportToPDF, exportToExcel } from '../lib/exporters'
 export default function ExportButtons({ title, columns, rows, filename }) {
   if (!rows?.length) return null
   return (
-    <div style={{ display: 'flex', gap: '0.5rem' }}>
+    <div className="no-print" style={{ display: 'flex', gap: '0.5rem' }}>
       <button
         type="button"
         className="btn-secondary"
@@ -17,6 +17,9 @@ export default function ExportButtons({ title, columns, rows, filename }) {
         onClick={() => exportToExcel({ columns, rows, filename })}
       >
         Export Excel
+      </button>
+      <button type="button" className="btn-secondary" onClick={() => window.print()}>
+        Print
       </button>
     </div>
   )
