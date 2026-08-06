@@ -50,6 +50,7 @@ export default function SaleInvoiceView({ invoiceId, onClose }) {
 
   async function downloadPdf() {
     if (!invoice) return
+    const showDiscount = items.some((it) => Number(it.discount) > 0)
     const doc = new jsPDF()
 
     // Banner is 936x324px (~2.889:1) — fit it to the usable A4 width (210mm - 2*14mm margin).
@@ -74,13 +75,13 @@ export default function SaleInvoiceView({ invoiceId, onClose }) {
 
     autoTable(doc, {
       startY: metaY + 23,
-      head: [['Item', 'Qty', 'Unit', 'Price', 'Discount', 'GST', 'Total']],
+      head: [['Item', 'Qty', 'Unit', 'Price', ...(showDiscount ? ['Discount'] : []), 'GST', 'Total']],
       body: items.map((it) => [
         it.products?.name ?? '',
         String(it.quantity),
         it.unit ?? '',
         formatMoney(it.rate),
-        formatMoney(it.discount),
+        ...(showDiscount ? [formatMoney(it.discount)] : []),
         it.gst_applicable ? formatMoney(it.gst_amount) : '-',
         formatMoney(it.amount + (it.gst_applicable ? it.gst_amount : 0)),
       ]),
@@ -106,6 +107,10 @@ export default function SaleInvoiceView({ invoiceId, onClose }) {
 
   if (loading) return <p className="muted">Loading invoice…</p>
   if (!invoice) return <p className="inline-error">Invoice not found.</p>
+
+  // Keep the Discount field available at entry time, but don't clutter the
+  // printed invoice with a column of zeroes when no discount was actually given.
+  const hasDiscount = items.some((it) => Number(it.discount) > 0)
 
   return (
     <div>
@@ -149,7 +154,7 @@ export default function SaleInvoiceView({ invoiceId, onClose }) {
               <th>Qty</th>
               <th>Unit</th>
               <th>Price</th>
-              <th>Discount</th>
+              {hasDiscount && <th>Discount</th>}
               <th>GST</th>
               <th>Total</th>
             </tr>
@@ -161,7 +166,7 @@ export default function SaleInvoiceView({ invoiceId, onClose }) {
                 <td>{it.quantity}</td>
                 <td>{it.unit}</td>
                 <td>{formatMoney(it.rate)}</td>
-                <td>{formatMoney(it.discount)}</td>
+                {hasDiscount && <td>{formatMoney(it.discount)}</td>}
                 <td>{it.gst_applicable ? formatMoney(it.gst_amount) : '—'}</td>
                 <td>{formatMoney(it.amount + (it.gst_applicable ? it.gst_amount : 0))}</td>
               </tr>

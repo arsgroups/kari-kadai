@@ -17,6 +17,7 @@ function emptyLine() {
 
 export default function NewPurchaseInvoiceTab() {
   const [suppliers, setSuppliers] = useState([])
+  const [supplierOutstanding, setSupplierOutstanding] = useState({}) // supplier_id -> outstanding
   const [products, setProducts] = useState([])
   const [getRate, setGetRate] = useState(() => () => 9)
   const [supplierId, setSupplierId] = useState('')
@@ -36,6 +37,16 @@ export default function NewPurchaseInvoiceTab() {
       .eq('is_active', true)
       .order('name')
       .then(({ data }) => setSuppliers(data ?? []))
+    supabase
+      .from('v_supplier_outstanding')
+      .select('supplier_id, outstanding')
+      .then(({ data }) => {
+        const map = {}
+        ;(data ?? []).forEach((row) => {
+          map[row.supplier_id] = row.outstanding
+        })
+        setSupplierOutstanding(map)
+      })
     supabase
       .from('products')
       .select('id, name, purchase_unit, default_purchase_price')
@@ -180,6 +191,17 @@ export default function NewPurchaseInvoiceTab() {
           </select>
         </label>
       </div>
+
+      {supplierId && (
+        <p className="muted" style={{ fontSize: '0.85rem' }}>
+          {(() => {
+            const owed = supplierOutstanding[supplierId] ?? 0
+            if (owed > 0) return `Currently owed to this supplier: ${formatMoney(owed)} — any payments already recorded are already netted out of this figure.`
+            if (owed < 0) return `This supplier has a credit balance of ${formatMoney(Math.abs(owed))} from prior overpayment — it will automatically reduce what shows as owed once this purchase is added.`
+            return 'No outstanding balance with this supplier.'
+          })()}
+        </p>
+      )}
 
       <table className="data-table" style={{ marginTop: '1.25rem' }}>
         <thead>
