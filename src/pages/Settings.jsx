@@ -2,6 +2,22 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { formatDate } from '../lib/format'
 
+// supabase-js's functions.invoke() collapses a non-2xx response into a generic
+// "Edge Function returned a non-2xx status code" message — the actual error
+// detail our function sent back is on error.context (the raw Response).
+async function extractFunctionError(error, data) {
+  if (data?.error) return data.error
+  if (error?.context && typeof error.context.json === 'function') {
+    try {
+      const body = await error.context.json()
+      if (body?.error) return body.error
+    } catch {
+      // response wasn't JSON — fall through to the generic message below
+    }
+  }
+  return error?.message || 'Request failed.'
+}
+
 export default function Settings() {
   const [settings, setSettings] = useState(null)
   const [logs, setLogs] = useState([])
@@ -58,7 +74,7 @@ export default function Settings() {
     const { data, error } = await supabase.functions.invoke('daily-backup', { body: { dryRun: true } })
     setTesting(false)
     if (error || data?.ok === false) {
-      setError(data?.error || error?.message || 'Connection test failed.')
+      setError(await extractFunctionError(error, data))
       return
     }
     setSuccess(data?.message || 'Connected to Google Drive successfully.')
@@ -72,7 +88,7 @@ export default function Settings() {
     const { data, error } = await supabase.functions.invoke('daily-backup', { body: { date: today } })
     setRunningNow(false)
     if (error || data?.ok === false) {
-      setError(data?.error || error?.message || 'Backup failed.')
+      setError(await extractFunctionError(error, data))
       load()
       return
     }
