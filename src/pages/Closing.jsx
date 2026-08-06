@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { formatMoney, toISODate } from '../lib/format'
+import { useAuth } from '../contexts/AuthContext'
+import DailyClosingReport from './closing/DailyClosingReport'
 
 export default function Closing() {
+  const { user } = useAuth()
   const [date, setDate] = useState(toISODate())
+  const [showReport, setShowReport] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -92,15 +96,28 @@ export default function Closing() {
     else load()
   }
 
+  if (showReport) {
+    return (
+      <div className="page">
+        <DailyClosingReport date={date} operatorEmail={user?.email} onClose={() => setShowReport(false)} />
+      </div>
+    )
+  }
+
   return (
     <div className="page">
       <h1>Daily Closing</h1>
 
       <div className="card">
-        <label>
-          Date
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ marginLeft: '0.5rem' }} />
-        </label>
+        <div className="toolbar" style={{ marginBottom: 0 }}>
+          <label>
+            Date
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ marginLeft: '0.5rem' }} />
+          </label>
+          <button className="btn-secondary" onClick={() => setShowReport(true)}>
+            View / Print Daily Closing Report
+          </button>
+        </div>
       </div>
 
       <div className="summary-tiles">
