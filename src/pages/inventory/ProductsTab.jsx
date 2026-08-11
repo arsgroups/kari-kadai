@@ -3,6 +3,12 @@ import { supabase } from '../../lib/supabaseClient'
 import { toISODate } from '../../lib/format'
 import { UNIT_OPTIONS, conversionFactor } from '../../lib/units'
 
+const CHANNELS = ['Restaurant', 'Home Delivery', 'Counter']
+
+function defaultChannels() {
+  return Object.fromEntries(CHANNELS.map((ch) => [ch, { is_visible: true, display_name: '' }]))
+}
+
 const emptyForm = {
   id: null,
   name: '',
@@ -18,6 +24,7 @@ const emptyForm = {
   opening_stock_value: 0,
   opening_stock_date: toISODate(),
   is_active: true,
+  channels: defaultChannels(),
 }
 
 export default function ProductsTab() {
@@ -31,13 +38,14 @@ export default function ProductsTab() {
 
   async function load() {
     setLoading(true)
-    const [{ data, error }, { data: yieldData }] = await Promise.all([
+    const [{ data, error }, { data: yieldData }, { data: channelData }] = await Promise.all([
       supabase.from('v_current_stock').select('*').order('name'),
       supabase
         .from('yield_configuration_items')
         .select('child_product_id, is_active, yield_configurations!inner(is_active, products(name))')
         .eq('is_active', true)
         .eq('yield_configurations.is_active', true),
+      supabase.from('product_channel_config').select('product_id, channel, is_visible'),
     ])
     if (error) setError(error.message)
     else {
@@ -45,7 +53,19 @@ export default function ProductsTab() {
       ;(yieldData ?? []).forEach((y) => {
         parentNameByChild[y.child_product_id] = y.yield_configurations?.products?.name
       })
-      setRows(data.map((r) => ({ ...r, cutFrom: parentNameByChild[r.product_id] ?? null })))
+      const hiddenChannelsByProduct = {}
+      ;(channelData ?? []).forEach((c) => {
+        if (c.is_visible === false) {
+          hiddenChannelsByProduct[c.product_id] = [...(hiddenChannelsByProduct[c.product_id] ?? []), c.channel]
+        }
+      })
+      setRows(
+        data.map((r) => ({
+          ...r,
+          cutFrom: parentNameByChild[r.product_id] ?? null,
+          hiddenChannels: hiddenChannelsByProduct[r.product_id] ?? [],
+        }))
+      )
     }
     setLoading(false)
   }
@@ -55,8 +75,15 @@ export default function ProductsTab() {
   }, [])
 
   async function startEdit(row) {
-    const { data } = await supabase.from('products').select('*').eq('id', row.product_id).single()
+    const [{ data }, { data: channelRows }] = await Promise.all([
+      supabase.from('products').select('*').eq('id', row.product_id).single(),
+      supabase.from('product_channel_config').select('channel, is_visible, display_name').eq('product_id', row.product_id),
+    ])
     if (!data) return
+    const channels = defaultChannels()
+    ;(channelRows ?? []).forEach((c) => {
+      channels[c.channel] = { is_visible: c.is_visible, display_name: c.display_name ?? '' }
+    })
     setForm({
       id: data.id,
       name: data.name,
@@ -73,6 +100,7 @@ export default function ProductsTab() {
       opening_stock_date: data.opening_stock_date ?? toISODate(),
       is_active: data.is_active,
       item_code: data.item_code,
+      channels,
     })
     setShowForm(true)
   }
@@ -106,18 +134,49 @@ export default function ProductsTab() {
       payload.opening_stock_value = Number(form.opening_stock_value) || 0
       payload.opening_stock_date = form.opening_stock_date || toISODate()
     }
-    const { error } = form.id
-      ? await supabase.from('products').update(payload).eq('id', form.id)
-      : await supabase.from('products').insert(payload)
+    const { data: savedProduct, error } = form.id
+      ? await supabase.from('products').update(payload).eq('id', form.id).select().single()
+      : await supabase.from('products').insert(payload).select().single()
 
-    setSaving(false)
     if (error) {
+      setSaving(false)
       setError(error.message)
+      return
+    }
+
+    const channelError = await saveChannelConfig(savedProduct.id, form.channels)
+    setSaving(false)
+    if (channelError) {
+      setError(channelError)
       return
     }
     setShowForm(false)
     setForm(emptyForm)
     load()
+  }
+
+  async function saveChannelConfig(productId, channels) {
+    const toUpsert = []
+    const toDelete = []
+    CHANNELS.forEach((ch) => {
+      const cfg = channels[ch]
+      const isDefault = cfg.is_visible !== false && !cfg.display_name
+      if (isDefault) toDelete.push(ch)
+      else toUpsert.push({ product_id: productId, channel: ch, is_visible: cfg.is_visible, display_name: cfg.display_name || null })
+    })
+    if (toUpsert.length) {
+      const { error } = await supabase.from('product_channel_config').upsert(toUpsert, { onConflict: 'product_id,channel' })
+      if (error) return error.message
+    }
+    if (toDelete.length) {
+      const { error } = await supabase
+        .from('product_channel_config')
+        .delete()
+        .eq('product_id', productId)
+        .in('channel', toDelete)
+      if (error) return error.message
+    }
+    return null
   }
 
   async function toggleActive(row) {
@@ -261,6 +320,42 @@ export default function ProductsTab() {
                 </label>
               </>
             )}
+            <div className="channel-config" style={{ gridColumn: '1 / -1' }}>
+              <h4 style={{ marginBottom: '0.2rem' }}>Channel Availability</h4>
+              <p className="muted" style={{ fontSize: '0.8rem', marginTop: 0 }}>
+                By default this item shows in every sales channel under its own name. Uncheck a channel to hide it
+                there, or give it a different name for that channel (e.g. "Mutton" in Restaurant, "Fresh Goat/Lamb"
+                elsewhere).
+              </p>
+              {CHANNELS.map((ch) => (
+                <div key={ch} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', minWidth: 150 }}>
+                    <input
+                      type="checkbox"
+                      checked={form.channels[ch].is_visible}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          channels: { ...form.channels, [ch]: { ...form.channels[ch], is_visible: e.target.checked } },
+                        })
+                      }
+                    />
+                    {ch}
+                  </label>
+                  <input
+                    placeholder={`Name in ${ch} (optional)`}
+                    value={form.channels[ch].display_name}
+                    disabled={!form.channels[ch].is_visible}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        channels: { ...form.channels, [ch]: { ...form.channels[ch], display_name: e.target.value } },
+                      })
+                    }
+                  />
+                </div>
+              ))}
+            </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button className="btn" type="submit" disabled={saving}>
                 {saving ? 'Saving…' : 'Save'}
@@ -310,6 +405,11 @@ export default function ProductsTab() {
                       {r.cutFrom && (
                         <div className="muted" style={{ fontSize: '0.75rem' }}>
                           Cut from {r.cutFrom}
+                        </div>
+                      )}
+                      {r.hiddenChannels.length > 0 && (
+                        <div className="muted" style={{ fontSize: '0.75rem' }}>
+                          Hidden from: {r.hiddenChannels.join(', ')}
                         </div>
                       )}
                     </td>
