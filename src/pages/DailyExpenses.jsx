@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react'
-import Tabs from '../components/Tabs'
 import { supabase } from '../lib/supabaseClient'
 import { formatMoney } from '../lib/format'
-import ExpenseEntryTab from './expenses/ExpenseEntryTab'
-import MonthlySummaryTab from './expenses/MonthlySummaryTab'
+import DailyExpenseEntryTab from './daily-expenses/DailyExpenseEntryTab'
 
-export default function Expenses() {
+export default function DailyExpenses() {
   const [pettyBalance, setPettyBalance] = useState(null)
 
   useEffect(() => {
@@ -18,7 +16,10 @@ export default function Expenses() {
 
   return (
     <div className="page">
-      <h1>Expenses</h1>
+      <h1>Daily Expenses</h1>
+      <p className="muted" style={{ marginTop: '-0.5rem' }}>
+        Day-to-day spend (fuel, stationery, small purchases). Intended to be visible to shop staff.
+      </p>
       {pettyBalance !== null && (
         <div className="summary-tiles">
           <div className="tile">
@@ -27,12 +28,7 @@ export default function Expenses() {
           </div>
         </div>
       )}
-      <Tabs
-        tabs={[
-          { key: 'entry', label: 'Log Expense', content: <ExpenseEntryTab /> },
-          { key: 'summary', label: 'Monthly Summary', content: <MonthlySummaryTab /> },
-        ]}
-      />
+      <DailyExpenseEntryTab />
     </div>
   )
 }

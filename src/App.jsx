@@ -9,7 +9,8 @@ import Sales from './pages/Sales'
 import Purchases from './pages/Purchases'
 import Customers from './pages/Customers'
 import Suppliers from './pages/Suppliers'
-import Expenses from './pages/Expenses'
+import DailyExpenses from './pages/DailyExpenses'
+import MonthlyExpenses from './pages/MonthlyExpenses'
 import Closing from './pages/Closing'
 import Gst from './pages/Gst'
 import Reports from './pages/Reports'
@@ -34,10 +35,12 @@ export default function App() {
             <Route path="inventory" element={<Inventory />} />
             <Route path="sales" element={<Sales />} />
             <Route path="purchases" element={<Purchases />} />
-            <Route path="petty-cash" element={<Navigate to="/expenses" replace />} />
+            <Route path="petty-cash" element={<Navigate to="/expenses/daily" replace />} />
+            <Route path="expenses" element={<Navigate to="/expenses/daily" replace />} />
             <Route path="customers" element={<Customers />} />
             <Route path="suppliers" element={<Suppliers />} />
-            <Route path="expenses" element={<Expenses />} />
+            <Route path="expenses/daily" element={<DailyExpenses />} />
+            <Route path="expenses/monthly" element={<MonthlyExpenses />} />
             <Route path="closing" element={<Closing />} />
             <Route path="gst" element={<Gst />} />
             <Route path="reports" element={<Reports />} />

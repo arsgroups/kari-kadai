@@ -16,6 +16,7 @@ export default function MonthlySummaryTab() {
     const { data } = await supabase
       .from('expenses')
       .select('date, amount, expense_categories(classification)')
+      .eq('scope', 'monthly')
       .eq('entry_type', 'expense')
     const byMonth = {}
     ;(data ?? []).forEach((row) => {

@@ -339,6 +339,7 @@ create table if not exists expense_categories (
 create table if not exists expenses (
   id uuid primary key default gen_random_uuid(),
   date date not null default current_date,
+  scope text not null default 'daily' check (scope in ('daily', 'monthly')),
   entry_type text not null default 'expense' check (entry_type in ('expense', 'topup')),
   category_id uuid references expense_categories(id), -- null for topups
   description text,
@@ -450,7 +451,8 @@ create or replace view v_petty_cash_balance
 select
   coalesce(sum(case when entry_type = 'topup' then amount else 0 end), 0)
     - coalesce(sum(case when entry_type = 'expense' then amount else 0 end), 0) as balance
-from expenses;
+from expenses
+where scope = 'daily';
 
 -- ============================================================================
 -- ROW LEVEL SECURITY — any authenticated (logged-in) user has full access

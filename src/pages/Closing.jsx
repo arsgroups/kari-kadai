@@ -38,7 +38,8 @@ export default function Closing() {
         .from('expenses')
         .select('amount')
         .eq('date', date)
-        .eq('entry_type', 'expense'),
+        .eq('entry_type', 'expense')
+        .eq('scope', 'daily'),
       supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
       supabase
         .from('daily_closing')

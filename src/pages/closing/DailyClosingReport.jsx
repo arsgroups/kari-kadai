@@ -31,7 +31,8 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       supabase
         .from('expenses')
         .select('amount, entry_type, expense_categories(name)')
-        .eq('date', date),
+        .eq('date', date)
+        .eq('scope', 'daily'),
       supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
       supabase
         .from('daily_closing')
@@ -196,6 +197,10 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
         </div>
 
         <h3>Summary</h3>
+        <p className="muted" style={{ fontSize: '0.8rem', marginTop: '-0.5rem' }}>
+          Expenses here cover daily/till spend only — recurring monthly bills (Salary, Rent, ...) are
+          tracked separately and included in the P&amp;L report instead.
+        </p>
         <table className="data-table" style={{ maxWidth: 480 }}>
           <tbody>
             <tr>
