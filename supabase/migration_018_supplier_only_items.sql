@@ -17,8 +17,8 @@ select
   p.sales_unit,
   p.low_stock_threshold,
   p.is_active,
-  p.supplier_only,
-  coalesce(sum(sm.quantity), 0) as current_stock
+  coalesce(sum(sm.quantity), 0) as current_stock,
+  p.supplier_only
 from products p
 left join stock_movements sm on sm.product_id = p.id
 group by p.id;
