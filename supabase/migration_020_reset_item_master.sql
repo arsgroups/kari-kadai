@@ -11,6 +11,13 @@
 delete from yield_configuration_items;
 delete from yield_configurations;
 
+-- Clear the old V1 sales/purchases tables too -- they were renamed to
+-- *_legacy (not dropped) when the app moved to sale_invoices/
+-- purchase_invoices, and their product_id column still blocks deleting
+-- any product they reference.
+delete from sales_legacy;
+delete from purchases_legacy;
+
 delete from products;
 
 alter sequence item_code_seq restart with 1;
