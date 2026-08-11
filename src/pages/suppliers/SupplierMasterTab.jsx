@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatMoney } from '../../lib/format'
+import { useAuth } from '../../contexts/AuthContext'
 
 const emptyForm = { id: null, name: '', phone: '', address: '', gst_registered: true, credit_days: '', is_active: true }
 
 export default function SupplierMasterTab() {
+  const { isAdmin } = useAuth()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -155,7 +157,7 @@ export default function SupplierMasterTab() {
               <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
                 Cancel
               </button>
-              {form.id && (
+              {form.id && isAdmin && (
                 <button type="button" className="btn-danger" disabled={saving} onClick={handleDelete}>
                   Delete
                 </button>

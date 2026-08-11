@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { toISODate } from '../../lib/format'
 import { UNIT_OPTIONS, conversionFactor } from '../../lib/units'
+import { useAuth } from '../../contexts/AuthContext'
 
 const CHANNELS = ['Restaurant', 'Home Delivery', 'Counter']
 
@@ -31,6 +32,7 @@ const emptyForm = {
 }
 
 export default function ProductsTab() {
+  const { isAdmin } = useAuth()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -430,7 +432,7 @@ export default function ProductsTab() {
               >
                 Cancel
               </button>
-              {form.id && (
+              {form.id && isAdmin && (
                 <button type="button" className="btn-danger" disabled={saving} onClick={handleDelete}>
                   Delete
                 </button>

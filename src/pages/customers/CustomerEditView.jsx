@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import Tabs from '../../components/Tabs'
 import CustomerPriceListPanel from './CustomerPriceListPanel'
+import { useAuth } from '../../contexts/AuthContext'
 
 export default function CustomerEditView({ customerId, onDone }) {
+  const { isAdmin } = useAuth()
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -136,9 +138,11 @@ export default function CustomerEditView({ customerId, onDone }) {
                     <button className="btn" type="submit" disabled={saving}>
                       {saving ? 'Saving…' : 'Save'}
                     </button>
-                    <button type="button" className="btn-danger" disabled={saving} onClick={handleDelete}>
-                      Delete
-                    </button>
+                    {isAdmin && (
+                      <button type="button" className="btn-danger" disabled={saving} onClick={handleDelete}>
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </form>
                 {error && <div className="inline-error">{error}</div>}

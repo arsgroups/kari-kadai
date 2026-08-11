@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
 import ExportButtons from '../../components/ExportButtons'
+import { useAuth } from '../../contexts/AuthContext'
 
 function firstOfMonth() {
   const d = new Date()
@@ -11,6 +12,7 @@ function firstOfMonth() {
 const emptyFilters = { from: firstOfMonth(), to: toISODate(), supplier_id: '', source: '' }
 
 export default function PurchaseInvoicesListTab() {
+  const { isAdmin } = useAuth()
   const [rows, setRows] = useState([])
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -223,9 +225,11 @@ export default function PurchaseInvoicesListTab() {
                       </span>
                     </td>
                     <td>
-                      <button className="btn-danger" disabled={deletingId === r.id} onClick={() => handleDelete(r)}>
-                        {deletingId === r.id ? 'Deleting…' : 'Delete'}
-                      </button>
+                      {isAdmin && (
+                        <button className="btn-danger" disabled={deletingId === r.id} onClick={() => handleDelete(r)}>
+                          {deletingId === r.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                   {expandedId === r.id && (

@@ -5,6 +5,7 @@ import { COMPANY } from '../../lib/companyInfo'
 import invoiceHeaderImg from '../../assets/invoice-header.jpg'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import { useAuth } from '../../contexts/AuthContext'
 
 function loadImageAsDataUrl(url) {
   return fetch(url)
@@ -21,6 +22,7 @@ function loadImageAsDataUrl(url) {
 }
 
 export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
+  const { isAdmin } = useAuth()
   const [invoice, setInvoice] = useState(null)
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -155,9 +157,11 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         <button className="btn-secondary" onClick={downloadPdf}>
           Download PDF
         </button>
-        <button className="btn-danger" disabled={deleting} onClick={handleDelete}>
-          {deleting ? 'Deleting…' : 'Delete Invoice'}
-        </button>
+        {isAdmin && (
+          <button className="btn-danger" disabled={deleting} onClick={handleDelete}>
+            {deleting ? 'Deleting…' : 'Delete Invoice'}
+          </button>
+        )}
         {onClose && (
           <button className="btn-secondary" onClick={onClose}>
             Close
