@@ -5,6 +5,7 @@ import DrilldownTab from './reports/DrilldownTab'
 import CustomerLedgerTab from './reports/CustomerLedgerTab'
 import SupplierLedgerTab from './reports/SupplierLedgerTab'
 import InventoryValuationTab from './reports/InventoryValuationTab'
+import ItemMarginTab from './reports/ItemMarginTab'
 
 export default function Reports() {
   return (
@@ -14,6 +15,7 @@ export default function Reports() {
         tabs={[
           { key: 'dashboard', label: 'Dashboard', content: <DashboardTab /> },
           { key: 'pnl', label: 'P&L', content: <PnLTab /> },
+          { key: 'item-margin', label: 'Item Margin', content: <ItemMarginTab /> },
           { key: 'drilldown', label: 'Drill-down Builder', content: <DrilldownTab /> },
           { key: 'customer-ledger', label: 'Customer Ledger', content: <CustomerLedgerTab /> },
           { key: 'supplier-ledger', label: 'Supplier Ledger', content: <SupplierLedgerTab /> },

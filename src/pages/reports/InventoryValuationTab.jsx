@@ -13,37 +13,24 @@ export default function InventoryValuationTab() {
 
   async function load() {
     setLoading(true)
-    const { data: stock } = await supabase
-      .from('v_current_stock')
-      .select('product_id, name, category, unit, current_stock, is_active')
-      .eq('is_active', true)
-      .order('name')
+    const [{ data: stock }, { data: products }] = await Promise.all([
+      supabase
+        .from('v_current_stock')
+        .select('product_id, name, category, unit, current_stock, is_active')
+        .eq('is_active', true)
+        .order('name'),
+      supabase.from('products').select('id, average_cost, default_purchase_price'),
+    ])
 
-    // Cost basis: most recent purchase rate for that item if available, else its
-    // default purchase price. This is a simple valuation, not true FIFO costing.
-    const enriched = await Promise.all(
-      (stock ?? []).map(async (p) => {
-        const { data: lastPurchase } = await supabase
-          .from('purchase_invoice_items')
-          .select('rate, created_at')
-          .eq('product_id', p.product_id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
+    const costByProduct = {}
+    ;(products ?? []).forEach((p) => {
+      costByProduct[p.id] = p.average_cost || p.default_purchase_price || 0
+    })
 
-        let costRate = lastPurchase?.rate
-        if (costRate == null) {
-          const { data: product } = await supabase
-            .from('products')
-            .select('default_purchase_price')
-            .eq('id', p.product_id)
-            .single()
-          costRate = product?.default_purchase_price ?? 0
-        }
-
-        return { ...p, costRate, value: (p.current_stock ?? 0) * (costRate ?? 0) }
-      })
-    )
+    const enriched = (stock ?? []).map((p) => {
+      const costRate = costByProduct[p.product_id] ?? 0
+      return { ...p, costRate, value: (p.current_stock ?? 0) * costRate }
+    })
 
     setRows(enriched)
     setLoading(false)
@@ -63,8 +50,9 @@ export default function InventoryValuationTab() {
   return (
     <div>
       <p className="muted" style={{ fontSize: '0.85rem' }}>
-        Valuation uses each item's most recent purchase rate (falling back to its default purchase
-        price if it's never been purchased) — a simple cost basis, not true FIFO layer costing.
+        Valuation uses each item's running weighted-average cost (updated by purchases and, for
+        cut/processed items, their allocated processing cost) — falling back to its default purchase
+        price if it has no cost history yet.
       </p>
       <div className="toolbar">
         <div className="tile" style={{ margin: 0 }}>
