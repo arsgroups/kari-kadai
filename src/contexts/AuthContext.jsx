@@ -21,7 +21,13 @@ export function AuthProvider({ children }) {
 
   async function loadRole(userId) {
     setRoleLoading(true)
-    const { data } = await supabase.from('user_roles').select('role').eq('user_id', userId).maybeSingle()
+    const { data, error } = await supabase.from('user_roles').select('role').eq('user_id', userId).maybeSingle()
+    if (error) {
+      // Previously this silently fell back to 'sales' on any failure (RLS issue,
+      // schema cache not yet refreshed, network error, ...), which is indistinguishable
+      // from "you're genuinely not an admin" — log it so that's visible instead.
+      console.error('Failed to load user role, defaulting to sales:', error)
+    }
     setRole(data?.role ?? 'sales')
     setRoleLoading(false)
   }
