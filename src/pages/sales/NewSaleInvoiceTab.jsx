@@ -20,6 +20,7 @@ function emptyLine() {
 export default function NewSaleInvoiceTab() {
   const [customers, setCustomers] = useState([])
   const [products, setProducts] = useState([])
+  const [channelConfig, setChannelConfig] = useState({}) // product_id -> { [channel]: { display_name, is_visible } }
   const [getRate, setGetRate] = useState(() => () => 9)
   const [customerPrices, setCustomerPrices] = useState({}) // product_id -> price
 
@@ -55,7 +56,14 @@ export default function NewSaleInvoiceTab() {
         .select('child_product_id, is_active, yield_configurations!inner(parent_product_id, is_active)')
         .eq('is_active', true)
         .eq('yield_configurations.is_active', true),
-    ]).then(([{ data: productData }, { data: stockData }, { data: yieldData }]) => {
+      supabase.from('product_channel_config').select('product_id, channel, display_name, is_visible'),
+    ]).then(([{ data: productData }, { data: stockData }, { data: yieldData }, { data: channelData }]) => {
+      const channelMap = {}
+      ;(channelData ?? []).forEach((row) => {
+        if (!channelMap[row.product_id]) channelMap[row.product_id] = {}
+        channelMap[row.product_id][row.channel] = { display_name: row.display_name, is_visible: row.is_visible }
+      })
+      setChannelConfig(channelMap)
       const stockByProduct = {}
       ;(stockData ?? []).forEach((s) => {
         stockByProduct[s.product_id] = s.current_stock
@@ -108,6 +116,17 @@ export default function NewSaleInvoiceTab() {
   const requiresCustomer = channel !== 'Counter'
   const filteredCustomers = useMemo(() => customers.filter((c) => c.type === channel), [customers, channel])
   const rate = getRate(date)
+
+  // Products actually offered on the currently selected channel, with any
+  // per-channel display name applied (e.g. "Mutton" here, "Fresh Goat/Lamb"
+  // elsewhere) — defaults to visible everywhere under its own name.
+  const channelProducts = useMemo(
+    () =>
+      products
+        .filter((p) => channelConfig[p.id]?.[channel]?.is_visible !== false)
+        .map((p) => ({ ...p, channelName: channelConfig[p.id]?.[channel]?.display_name || p.name })),
+    [products, channelConfig, channel]
+  )
 
   function updateLine(key, patch) {
     setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)))
@@ -198,6 +217,7 @@ export default function NewSaleInvoiceTab() {
       discount: Number(l.discount) || 0,
       gst_applicable: l.gst_applicable,
       gst_amount: lineGst(l),
+      display_name: channelProducts.find((p) => p.id === l.product_id)?.channelName || null,
     }))
 
     const { error: itemsError } = await supabase.from('sale_invoice_items').insert(itemRows)
@@ -320,9 +340,9 @@ export default function NewSaleInvoiceTab() {
               <td>
                 <select value={line.product_id} onChange={(e) => handleProductChange(line.key, e.target.value)}>
                   <option value="">Select item…</option>
-                  {products.map((p) => (
+                  {channelProducts.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name}
+                      {p.channelName}
                       {p.cutFrom ? ` (from ${p.cutFrom})` : ''}
                     </option>
                   ))}

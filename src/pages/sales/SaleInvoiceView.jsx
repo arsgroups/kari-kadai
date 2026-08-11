@@ -77,7 +77,7 @@ export default function SaleInvoiceView({ invoiceId, onClose }) {
       startY: metaY + 23,
       head: [['Item', 'Qty', 'Unit', 'Price', ...(showDiscount ? ['Discount'] : []), 'GST', 'Total']],
       body: items.map((it) => [
-        it.products?.name ?? '',
+        it.display_name || it.products?.name || '',
         String(it.quantity),
         it.unit ?? '',
         formatMoney(it.rate),
@@ -162,7 +162,7 @@ export default function SaleInvoiceView({ invoiceId, onClose }) {
           <tbody>
             {items.map((it) => (
               <tr key={it.id}>
-                <td>{it.products?.name ?? '—'}</td>
+                <td>{it.display_name || it.products?.name || '—'}</td>
                 <td>{it.quantity}</td>
                 <td>{it.unit}</td>
                 <td>{formatMoney(it.rate)}</td>

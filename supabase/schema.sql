@@ -149,6 +149,7 @@ create table if not exists sale_invoice_items (
   gst_amount numeric not null default 0,
   amount numeric generated always as (quantity * rate - discount) stored,
   unit_cost numeric, -- product's average_cost snapshotted at time of sale, for margin reporting
+  display_name text, -- channel-specific name shown at time of sale (falls back to products.name)
   created_at timestamptz not null default now()
 );
 
@@ -431,6 +432,19 @@ create table if not exists yield_configuration_items (
   created_at timestamptz not null default now()
 );
 
+-- Per-channel product visibility + display name override. Default (no row):
+-- visible in every channel under the item's own name. A row for
+-- (product, channel) overrides just that one channel.
+create table if not exists product_channel_config (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references products(id) on delete cascade,
+  channel text not null check (channel in ('Restaurant', 'Home Delivery', 'Counter')),
+  display_name text,
+  is_visible boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (product_id, channel)
+);
+
 create or replace function bump_average_cost(p_product_id uuid, p_qty_in numeric, p_unit_cost numeric)
 returns void as $$
 declare
@@ -616,7 +630,7 @@ begin
       'manual_accounting_totals','expenses',
       'expense_categories','daily_closing','gst_rate_history',
       'gst_returns','csv_import_mappings','import_batches','customer_item_prices',
-      'yield_configurations','yield_configuration_items'
+      'yield_configurations','yield_configuration_items','product_channel_config'
     ])
   loop
     execute format('alter table %I enable row level security', t);
