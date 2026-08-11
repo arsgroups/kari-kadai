@@ -31,9 +31,22 @@ export default function ProductsTab() {
 
   async function load() {
     setLoading(true)
-    const { data, error } = await supabase.from('v_current_stock').select('*').order('name')
+    const [{ data, error }, { data: yieldData }] = await Promise.all([
+      supabase.from('v_current_stock').select('*').order('name'),
+      supabase
+        .from('yield_configuration_items')
+        .select('child_product_id, is_active, yield_configurations!inner(is_active, products(name))')
+        .eq('is_active', true)
+        .eq('yield_configurations.is_active', true),
+    ])
     if (error) setError(error.message)
-    else setRows(data)
+    else {
+      const parentNameByChild = {}
+      ;(yieldData ?? []).forEach((y) => {
+        parentNameByChild[y.child_product_id] = y.yield_configurations?.products?.name
+      })
+      setRows(data.map((r) => ({ ...r, cutFrom: parentNameByChild[r.product_id] ?? null })))
+    }
     setLoading(false)
   }
 
@@ -114,7 +127,7 @@ export default function ProductsTab() {
 
   const categories = [...new Set(rows.map((r) => r.category).filter(Boolean))]
   const visibleRows = lowStockOnly
-    ? rows.filter((r) => r.current_stock <= r.low_stock_threshold)
+    ? rows.filter((r) => !r.cutFrom && r.current_stock <= r.low_stock_threshold)
     : rows
 
   return (
@@ -288,11 +301,18 @@ export default function ProductsTab() {
             </thead>
             <tbody>
               {visibleRows.map((r) => {
-                const low = r.current_stock <= r.low_stock_threshold
+                const low = !r.cutFrom && r.current_stock <= r.low_stock_threshold
                 return (
                   <tr key={r.product_id}>
                     <td>{r.item_code}</td>
-                    <td>{r.name}</td>
+                    <td>
+                      {r.name}
+                      {r.cutFrom && (
+                        <div className="muted" style={{ fontSize: '0.75rem' }}>
+                          Cut from {r.cutFrom}
+                        </div>
+                      )}
+                    </td>
                     <td>{r.category}</td>
                     <td>{r.purchase_unit}</td>
                     <td>{r.sales_unit}</td>

@@ -50,18 +50,38 @@ export default function NewSaleInvoiceTab() {
         .eq('is_active', true)
         .order('name'),
       supabase.from('v_current_stock').select('product_id, current_stock'),
-    ]).then(([{ data: productData }, { data: stockData }]) => {
+      supabase
+        .from('yield_configuration_items')
+        .select('child_product_id, is_active, yield_configurations!inner(parent_product_id, is_active)')
+        .eq('is_active', true)
+        .eq('yield_configurations.is_active', true),
+    ]).then(([{ data: productData }, { data: stockData }, { data: yieldData }]) => {
       const stockByProduct = {}
       ;(stockData ?? []).forEach((s) => {
         stockByProduct[s.product_id] = s.current_stock
       })
+      const parentByChild = {}
+      ;(yieldData ?? []).forEach((y) => {
+        parentByChild[y.child_product_id] = y.yield_configurations.parent_product_id
+      })
+      const productById = {}
+      ;(productData ?? []).forEach((p) => {
+        productById[p.id] = p
+      })
       setProducts(
-        (productData ?? []).map((p) => ({
-          ...p,
-          // Convert stock from the inventory unit into this item's sales unit,
-          // so what's shown matches how it's actually sold (e.g. grams, not kg).
-          availableInSalesUnit: round2((stockByProduct[p.id] ?? 0) / conversionFactor(p.sales_unit, p.unit)),
-        }))
+        (productData ?? []).map((p) => {
+          const parentId = parentByChild[p.id]
+          const parent = parentId ? productById[parentId] : null
+          // For a configured yield-child, "available" reflects the parent's stock
+          // (converted through both products' units) since the child holds none itself.
+          const availableInSalesUnit = parent
+            ? round2(
+                ((stockByProduct[parent.id] ?? 0) * conversionFactor(parent.unit, p.unit)) /
+                  conversionFactor(p.sales_unit, p.unit)
+              )
+            : round2((stockByProduct[p.id] ?? 0) / conversionFactor(p.sales_unit, p.unit))
+          return { ...p, availableInSalesUnit, cutFrom: parent?.name ?? null }
+        })
       )
     })
     fetchRateHistory().then((rates) => setGetRate(() => buildRateResolver(rates)))
@@ -303,6 +323,7 @@ export default function NewSaleInvoiceTab() {
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
+                      {p.cutFrom ? ` (from ${p.cutFrom})` : ''}
                     </option>
                   ))}
                 </select>

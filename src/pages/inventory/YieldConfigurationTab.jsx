@@ -124,9 +124,10 @@ export default function YieldConfigurationTab() {
   return (
     <div>
       <p className="muted" style={{ fontSize: '0.85rem' }}>
-        Define which sale items a purchased item can be cut/processed into (e.g. Fletcher Mutton →
-        Bone Mutton, Boneless Mutton, ...). Cost is allocated by weight from the parent's average
-        cost when you actually record a Processing Event.
+        Define which sale items a purchased item can be cut into (e.g. Mutton → Bone Mutton,
+        Boneless Mutton, ...). No separate cutting step to record — selling a configured item
+        automatically deducts that weight straight from the parent's stock, and uses the parent's
+        average cost for that item's margin reporting. Each sale item can only belong to one parent.
       </p>
 
       <div className="toolbar">

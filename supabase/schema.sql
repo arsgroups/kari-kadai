@@ -413,6 +413,8 @@ create table if not exists gst_returns (
 -- with cost allocated by weight from the parent's average cost.
 -- ============================================================================
 
+-- A sale item can only belong to one parent's yield configuration — otherwise
+-- "which parent do I deduct from?" would be ambiguous.
 create table if not exists yield_configurations (
   id uuid primary key default gen_random_uuid(),
   parent_product_id uuid not null references products(id) on delete cascade,
@@ -424,36 +426,10 @@ create table if not exists yield_configurations (
 create table if not exists yield_configuration_items (
   id uuid primary key default gen_random_uuid(),
   yield_configuration_id uuid not null references yield_configurations(id) on delete cascade,
-  child_product_id uuid not null references products(id),
+  child_product_id uuid not null references products(id) unique,
   is_active boolean not null default true,
-  created_at timestamptz not null default now(),
-  unique (yield_configuration_id, child_product_id)
-);
-
-create table if not exists processing_events (
-  id uuid primary key default gen_random_uuid(),
-  date date not null default current_date,
-  parent_product_id uuid not null references products(id),
-  quantity_processed numeric not null,
-  unit_cost numeric not null,
-  note text,
   created_at timestamptz not null default now()
 );
-
-create table if not exists processing_event_items (
-  id uuid primary key default gen_random_uuid(),
-  processing_event_id uuid not null references processing_events(id) on delete cascade,
-  child_product_id uuid not null references products(id),
-  quantity_yielded numeric not null,
-  unit_cost numeric not null,
-  allocated_cost numeric generated always as (quantity_yielded * unit_cost) stored,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists idx_processing_events_date on processing_events(date);
-create index if not exists idx_processing_events_parent on processing_events(parent_product_id);
-create index if not exists idx_processing_event_items_event on processing_event_items(processing_event_id);
-create index if not exists idx_processing_event_items_child on processing_event_items(child_product_id);
 
 create or replace function bump_average_cost(p_product_id uuid, p_qty_in numeric, p_unit_cost numeric)
 returns void as $$
@@ -488,39 +464,82 @@ create trigger purchase_item_average_cost
   after insert on purchase_invoice_items
   for each row execute function trg_purchase_item_average_cost();
 
-create or replace function trg_processing_event_stock_movement() returns trigger as $$
+-- Kg<->Gram conversion, mirrors src/lib/units.js conversionFactor().
+create or replace function unit_conversion_factor(from_unit text, to_unit text) returns numeric as $$
 begin
-  insert into stock_movements (date, product_id, movement_type, quantity, reference_type, reference_id, note)
-  values (new.date, new.parent_product_id, 'processing', -abs(new.quantity_processed), 'manual', new.id, 'Processed into yield items');
-  return new;
+  if from_unit = to_unit then return 1; end if;
+  if from_unit = 'Kg' and to_unit = 'Gram' then return 1000; end if;
+  if from_unit = 'Gram' and to_unit = 'Kg' then return 0.001; end if;
+  return 1;
 end;
-$$ language plpgsql;
+$$ language plpgsql immutable;
 
-drop trigger if exists processing_event_stock_movement on processing_events;
-create trigger processing_event_stock_movement
-  after insert on processing_events
-  for each row execute function trg_processing_event_stock_movement();
+-- Which parent (if any) a product is a configured yield-child of.
+create or replace function yield_parent_of(p_product_id uuid) returns uuid as $$
+  select yc.parent_product_id
+  from yield_configuration_items yci
+  join yield_configurations yc on yc.id = yci.yield_configuration_id
+  where yci.child_product_id = p_product_id and yci.is_active = true and yc.is_active = true
+  limit 1;
+$$ language sql stable;
 
-create or replace function trg_processing_item_stock_movement() returns trigger as $$
+-- Sales: if the sold product is a configured yield-child (e.g. Mutton
+-- Boneless), deduct the equivalent weight from its parent's stock (e.g.
+-- Mutton) instead — children never hold independent inventory, so cutting
+-- happens implicitly at sale time rather than needing a pre-recorded batch.
+create or replace function trg_sale_item_stock_movement() returns trigger as $$
 declare
-  event_date date;
+  factor numeric;
+  invoice_date date;
+  parent_id uuid;
+  parent_unit text;
+  child_unit text;
+  deduct_qty numeric;
+  target_id uuid;
 begin
-  select date into event_date from processing_events where id = new.processing_event_id;
-  perform bump_average_cost(new.child_product_id, new.quantity_yielded, new.unit_cost);
-  insert into stock_movements (date, product_id, movement_type, quantity, reference_type, reference_id, note)
-  values (event_date, new.child_product_id, 'processing', abs(new.quantity_yielded), 'manual', new.id, 'Yielded from processing');
+  if new.product_id is null then
+    return new;
+  end if;
+
+  select date into invoice_date from sale_invoices where id = new.sale_invoice_id;
+  parent_id := yield_parent_of(new.product_id);
+
+  if parent_id is not null then
+    select unit into parent_unit from products where id = parent_id;
+    select unit, sales_to_inventory_factor into child_unit, factor from products where id = new.product_id;
+    deduct_qty := abs(new.quantity) * coalesce(factor, 1) * unit_conversion_factor(child_unit, parent_unit);
+    target_id := parent_id;
+  else
+    select sales_to_inventory_factor into factor from products where id = new.product_id;
+    deduct_qty := abs(new.quantity) * coalesce(factor, 1);
+    target_id := new.product_id;
+  end if;
+
+  insert into stock_movements (date, product_id, movement_type, quantity, reference_type, reference_id)
+  values (invoice_date, target_id, 'sale', -deduct_qty, 'sale', new.id);
   return new;
 end;
 $$ language plpgsql;
 
-drop trigger if exists processing_item_stock_movement on processing_event_items;
-create trigger processing_item_stock_movement
-  after insert on processing_event_items
-  for each row execute function trg_processing_item_stock_movement();
+drop trigger if exists sale_item_stock_movement on sale_invoice_items;
+create trigger sale_item_stock_movement
+  after insert on sale_invoice_items
+  for each row execute function trg_sale_item_stock_movement();
 
+-- Margin cost basis: yield-children use their parent's average cost, since
+-- children never receive their own stock-in (their own average_cost would
+-- otherwise stay 0 forever).
 create or replace function trg_sale_item_unit_cost() returns trigger as $$
+declare
+  parent_id uuid;
 begin
-  if new.product_id is not null then
+  if new.product_id is null then
+    return new;
+  end if;
+  parent_id := yield_parent_of(new.product_id);
+  if parent_id is not null then
+    select average_cost into new.unit_cost from products where id = parent_id;
+  else
     select average_cost into new.unit_cost from products where id = new.product_id;
   end if;
   return new;
@@ -597,7 +616,7 @@ begin
       'manual_accounting_totals','expenses',
       'expense_categories','daily_closing','gst_rate_history',
       'gst_returns','csv_import_mappings','import_batches','customer_item_prices',
-      'yield_configurations','yield_configuration_items','processing_events','processing_event_items'
+      'yield_configurations','yield_configuration_items'
     ])
   loop
     execute format('alter table %I enable row level security', t);
