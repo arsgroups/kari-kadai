@@ -18,6 +18,7 @@ export function AuthProvider({ children }) {
   // so nothing admin-only is shown/reachable while this is still resolving.
   const [role, setRole] = useState('sales')
   const [roleLoading, setRoleLoading] = useState(true)
+  const [roleDebug, setRoleDebug] = useState('')
 
   async function loadRole(userId) {
     setRoleLoading(true)
@@ -25,8 +26,10 @@ export function AuthProvider({ children }) {
     if (error) {
       // Previously this silently fell back to 'sales' on any failure (RLS issue,
       // schema cache not yet refreshed, network error, ...), which is indistinguishable
-      // from "you're genuinely not an admin" — log it so that's visible instead.
-      console.error('Failed to load user role, defaulting to sales:', error)
+      // from "you're genuinely not an admin" — surface it visibly instead.
+      setRoleDebug(`query error: ${error.message} (code ${error.code ?? 'n/a'})`)
+    } else {
+      setRoleDebug(data ? `row found: role="${data.role}"` : 'no row found for this user_id')
     }
     setRole(data?.role ?? 'sales')
     setRoleLoading(false)
@@ -76,6 +79,7 @@ export function AuthProvider({ children }) {
     devAutoLoginActive,
     role,
     roleLoading,
+    roleDebug,
     isAdmin: role === 'admin',
     signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
     signOut: () => supabase.auth.signOut(),

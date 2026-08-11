@@ -20,7 +20,7 @@ const NAV_ITEMS = [
 ]
 
 export default function Layout() {
-  const { user, signOut, devAutoLoginActive, isAdmin } = useAuth()
+  const { user, signOut, devAutoLoginActive, isAdmin, role, roleDebug } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const visibleNavItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin)
@@ -73,6 +73,9 @@ export default function Layout() {
         </nav>
         <div className="sidebar-footer">
           <div className="user-email">{user?.email}</div>
+          <div className="user-email" style={{ fontSize: '0.7rem', opacity: 0.8 }}>
+            Role: {role} ({roleDebug || 'checking…'})
+          </div>
           <button className="signout-btn" onClick={() => signOut()}>
             Sign out
           </button>
