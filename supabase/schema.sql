@@ -32,6 +32,7 @@ create table if not exists products (
   opening_stock_date date,
   is_active boolean not null default true,
   average_cost numeric not null default 0, -- weighted-average cost per inventory unit
+  supplier_only boolean not null default false, -- purchase-only item: hidden from every sales channel
   created_at timestamptz not null default now()
 );
 
@@ -581,6 +582,7 @@ select
   p.sales_unit,
   p.low_stock_threshold,
   p.is_active,
+  p.supplier_only,
   coalesce(sum(sm.quantity), 0) as current_stock
 from products p
 left join stock_movements sm on sm.product_id = p.id

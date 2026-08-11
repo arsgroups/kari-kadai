@@ -24,6 +24,7 @@ const emptyForm = {
   opening_stock_value: 0,
   opening_stock_date: toISODate(),
   is_active: true,
+  supplier_only: false,
   channels: defaultChannels(),
 }
 
@@ -100,6 +101,7 @@ export default function ProductsTab() {
       opening_stock_date: data.opening_stock_date ?? toISODate(),
       is_active: data.is_active,
       item_code: data.item_code,
+      supplier_only: data.supplier_only ?? false,
       channels,
     })
     setShowForm(true)
@@ -127,6 +129,7 @@ export default function ProductsTab() {
       default_selling_price: form.default_selling_price === '' ? null : Number(form.default_selling_price),
       low_stock_threshold: Number(form.low_stock_threshold) || 0,
       is_active: form.is_active,
+      supplier_only: form.supplier_only,
     }
     if (!form.id) {
       // Opening stock only applies at creation — editing later shouldn't re-log a movement.
@@ -321,13 +324,24 @@ export default function ProductsTab() {
               </>
             )}
             <div className="channel-config" style={{ gridColumn: '1 / -1' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.6rem' }}>
+                <input
+                  type="checkbox"
+                  checked={form.supplier_only}
+                  onChange={(e) => setForm({ ...form, supplier_only: e.target.checked })}
+                />
+                <strong>Supplier item</strong>
+                <span className="muted" style={{ fontSize: '0.8rem' }}>
+                  — purchase-only, hidden from every Sales channel (still shows in Purchase Invoice)
+                </span>
+              </label>
               <h4 style={{ marginBottom: '0.2rem' }}>Channel Availability</h4>
               <p className="muted" style={{ fontSize: '0.8rem', marginTop: 0 }}>
-                By default this item shows in every sales channel under its own name. Uncheck a channel to hide it
-                there, or give it a different name for that channel (e.g. "Mutton" in Restaurant, "Fresh Goat/Lamb"
-                elsewhere).
+                {form.supplier_only
+                  ? 'Not applicable — this item is marked Supplier-only above, so it will be hidden from all sales channels regardless of these settings.'
+                  : 'By default this item shows in every sales channel under its own name. Uncheck a channel to hide it there, or give it a different name for that channel (e.g. "Mutton" in Restaurant, "Fresh Goat/Lamb" elsewhere).'}
               </p>
-              {CHANNELS.map((ch) => (
+              {!form.supplier_only && CHANNELS.map((ch) => (
                 <div key={ch} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.4rem' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', minWidth: 150 }}>
                     <input
@@ -407,10 +421,16 @@ export default function ProductsTab() {
                           Cut from {r.cutFrom}
                         </div>
                       )}
-                      {r.hiddenChannels.length > 0 && (
+                      {r.supplier_only ? (
                         <div className="muted" style={{ fontSize: '0.75rem' }}>
-                          Hidden from: {r.hiddenChannels.join(', ')}
+                          Supplier item (purchase-only)
                         </div>
+                      ) : (
+                        r.hiddenChannels.length > 0 && (
+                          <div className="muted" style={{ fontSize: '0.75rem' }}>
+                            Hidden from: {r.hiddenChannels.join(', ')}
+                          </div>
+                        )
                       )}
                     </td>
                     <td>{r.category}</td>

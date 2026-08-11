@@ -47,7 +47,7 @@ export default function NewSaleInvoiceTab() {
     Promise.all([
       supabase
         .from('products')
-        .select('id, name, unit, sales_unit, default_selling_price')
+        .select('id, name, unit, sales_unit, default_selling_price, supplier_only')
         .eq('is_active', true)
         .order('name'),
       supabase.from('v_current_stock').select('product_id, current_stock'),
@@ -123,7 +123,7 @@ export default function NewSaleInvoiceTab() {
   const channelProducts = useMemo(
     () =>
       products
-        .filter((p) => channelConfig[p.id]?.[channel]?.is_visible !== false)
+        .filter((p) => !p.supplier_only && channelConfig[p.id]?.[channel]?.is_visible !== false)
         .map((p) => ({ ...p, channelName: channelConfig[p.id]?.[channel]?.display_name || p.name })),
     [products, channelConfig, channel]
   )
