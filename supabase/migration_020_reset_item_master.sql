@@ -5,6 +5,12 @@
 -- those tables block deleting a product they already reference.
 -- Run this in Supabase SQL Editor.
 
+-- Clear any existing Yield Configuration (parent->child cutting) setup
+-- first -- child_product_id doesn't cascade-delete, so old rows would
+-- otherwise block removing the products below.
+delete from yield_configuration_items;
+delete from yield_configurations;
+
 delete from products;
 
 alter sequence item_code_seq restart with 1;
