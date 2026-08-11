@@ -14,6 +14,17 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
   const [devAutoLoginActive, setDevAutoLoginActive] = useState(false)
+  // Defaults to 'sales' (least privilege) until we've actually confirmed a role,
+  // so nothing admin-only is shown/reachable while this is still resolving.
+  const [role, setRole] = useState('sales')
+  const [roleLoading, setRoleLoading] = useState(true)
+
+  async function loadRole(userId) {
+    setRoleLoading(true)
+    const { data } = await supabase.from('user_roles').select('role').eq('user_id', userId).maybeSingle()
+    setRole(data?.role ?? 'sales')
+    setRoleLoading(false)
+  }
 
   useEffect(() => {
     async function init() {
@@ -28,17 +39,25 @@ export function AuthProvider({ children }) {
           setSession(signInData.session)
           setDevAutoLoginActive(true)
           setLoading(false)
+          await loadRole(signInData.session.user.id)
           return
         }
       }
 
       setSession(data.session)
       setLoading(false)
+      if (data.session) await loadRole(data.session.user.id)
+      else setRoleLoading(false)
     }
     init()
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession)
+      if (newSession) loadRole(newSession.user.id)
+      else {
+        setRole('sales')
+        setRoleLoading(false)
+      }
     })
 
     return () => listener.subscription.unsubscribe()
@@ -49,6 +68,9 @@ export function AuthProvider({ children }) {
     user: session?.user ?? null,
     loading,
     devAutoLoginActive,
+    role,
+    roleLoading,
+    isAdmin: role === 'admin',
     signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
     signOut: () => supabase.auth.signOut(),
   }

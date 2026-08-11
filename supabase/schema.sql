@@ -482,6 +482,33 @@ begin
 end $$;
 
 -- ============================================================================
+-- USER ROLES ('admin' sees everything; 'sales' has Monthly Expenses, GST,
+-- Reports, and Settings hidden/blocked in the app). Not part of the generic
+-- RLS loop above — it needs its own policies so only admins can assign roles.
+-- ============================================================================
+
+create table if not exists user_roles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  role text not null default 'sales' check (role in ('admin', 'sales')),
+  created_at timestamptz not null default now()
+);
+
+alter table user_roles enable row level security;
+
+drop policy if exists "authenticated_read" on user_roles;
+create policy "authenticated_read" on user_roles for select to authenticated using (true);
+
+drop policy if exists "admins_write" on user_roles;
+create policy "admins_write" on user_roles for all to authenticated
+  using (exists (select 1 from user_roles ur where ur.user_id = auth.uid() and ur.role = 'admin'))
+  with check (exists (select 1 from user_roles ur where ur.user_id = auth.uid() and ur.role = 'admin'));
+
+-- After running this file, mark your own login as admin:
+--   insert into user_roles (user_id, role)
+--   select id, 'admin' from auth.users where email = 'your-login-email'
+--   on conflict (user_id) do update set role = 'admin';
+
+-- ============================================================================
 -- SEED DATA
 -- ============================================================================
 

@@ -11,18 +11,19 @@ const NAV_ITEMS = [
   { to: '/customers', label: 'Customers & Credit' },
   { to: '/suppliers', label: 'Suppliers' },
   { to: '/expenses/daily', label: 'Daily Expenses' },
-  { to: '/expenses/monthly', label: 'Monthly Expenses' },
+  { to: '/expenses/monthly', label: 'Monthly Expenses', adminOnly: true },
   { to: '/closing', label: 'Daily Closing' },
-  { to: '/gst', label: 'GST' },
-  { to: '/reports', label: 'Reports' },
+  { to: '/gst', label: 'GST', adminOnly: true },
+  { to: '/reports', label: 'Reports', adminOnly: true },
   { to: '/import', label: 'Import from Accounting App' },
-  { to: '/settings', label: 'Settings' },
+  { to: '/settings', label: 'Settings', adminOnly: true },
 ]
 
 export default function Layout() {
-  const { user, signOut, devAutoLoginActive } = useAuth()
+  const { user, signOut, devAutoLoginActive, isAdmin } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
+  const visibleNavItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin)
 
   // Close the mobile sidebar whenever the route changes (e.g. after tapping a nav link).
   useEffect(() => {
@@ -59,7 +60,7 @@ export default function Layout() {
           <div className="dev-banner">DEV AUTO-LOGIN — local only, never in production</div>
         )}
         <nav>
-          {NAV_ITEMS.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

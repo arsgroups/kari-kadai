@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import AdminRoute from './components/AdminRoute'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -40,12 +41,40 @@ export default function App() {
             <Route path="customers" element={<Customers />} />
             <Route path="suppliers" element={<Suppliers />} />
             <Route path="expenses/daily" element={<DailyExpenses />} />
-            <Route path="expenses/monthly" element={<MonthlyExpenses />} />
+            <Route
+              path="expenses/monthly"
+              element={
+                <AdminRoute>
+                  <MonthlyExpenses />
+                </AdminRoute>
+              }
+            />
             <Route path="closing" element={<Closing />} />
-            <Route path="gst" element={<Gst />} />
-            <Route path="reports" element={<Reports />} />
+            <Route
+              path="gst"
+              element={
+                <AdminRoute>
+                  <Gst />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="reports"
+              element={
+                <AdminRoute>
+                  <Reports />
+                </AdminRoute>
+              }
+            />
             <Route path="import" element={<Import />} />
-            <Route path="settings" element={<Settings />} />
+            <Route
+              path="settings"
+              element={
+                <AdminRoute>
+                  <Settings />
+                </AdminRoute>
+              }
+            />
           </Route>
         </Routes>
       </AuthProvider>
