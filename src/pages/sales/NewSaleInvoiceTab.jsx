@@ -47,7 +47,7 @@ export default function NewSaleInvoiceTab() {
     Promise.all([
       supabase
         .from('products')
-        .select('id, name, unit, sales_unit, default_selling_price, supplier_only')
+        .select('id, name, unit, sales_unit, default_selling_price, restaurant_price, counter_price, supplier_only')
         .eq('is_active', true)
         .order('name'),
       supabase.from('v_current_stock').select('product_id, current_stock'),
@@ -135,10 +135,11 @@ export default function NewSaleInvoiceTab() {
   function handleProductChange(key, productId) {
     const product = products.find((p) => p.id === productId)
     const customPrice = customerPrices[productId]
+    const channelPrice = channel === 'Restaurant' ? product?.restaurant_price : product?.counter_price
     updateLine(key, {
       product_id: productId,
       unit: product?.sales_unit ?? '',
-      rate: customPrice ?? product?.default_selling_price ?? '',
+      rate: customPrice ?? channelPrice ?? product?.default_selling_price ?? '',
       gst_applicable: true,
     })
   }

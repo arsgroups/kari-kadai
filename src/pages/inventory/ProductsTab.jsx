@@ -19,6 +19,8 @@ const emptyForm = {
   sales_unit: 'Kg',
   default_purchase_price: '',
   default_selling_price: '',
+  restaurant_price: '',
+  counter_price: '',
   low_stock_threshold: 0,
   opening_stock: 0,
   opening_stock_value: 0,
@@ -95,6 +97,8 @@ export default function ProductsTab() {
       sales_unit: data.sales_unit,
       default_purchase_price: data.default_purchase_price ?? '',
       default_selling_price: data.default_selling_price ?? '',
+      restaurant_price: data.restaurant_price ?? '',
+      counter_price: data.counter_price ?? '',
       low_stock_threshold: data.low_stock_threshold,
       opening_stock: data.opening_stock,
       opening_stock_value: data.opening_stock_value,
@@ -127,6 +131,8 @@ export default function ProductsTab() {
       sales_to_inventory_factor: conversionFactor(form.sales_unit, form.unit),
       default_purchase_price: form.default_purchase_price === '' ? null : Number(form.default_purchase_price),
       default_selling_price: form.default_selling_price === '' ? null : Number(form.default_selling_price),
+      restaurant_price: form.restaurant_price === '' ? null : Number(form.restaurant_price),
+      counter_price: form.counter_price === '' ? null : Number(form.counter_price),
       low_stock_threshold: Number(form.low_stock_threshold) || 0,
       is_active: form.is_active,
       supplier_only: form.supplier_only,
@@ -282,6 +288,26 @@ export default function ProductsTab() {
                 step="0.01"
                 value={form.default_selling_price}
                 onChange={(e) => setForm({ ...form, default_selling_price: e.target.value })}
+              />
+            </label>
+            <label>
+              Restaurant Selling Price
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Falls back to Default Selling Price"
+                value={form.restaurant_price}
+                onChange={(e) => setForm({ ...form, restaurant_price: e.target.value })}
+              />
+            </label>
+            <label>
+              Counter / Home Delivery Selling Price
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Falls back to Default Selling Price"
+                value={form.counter_price}
+                onChange={(e) => setForm({ ...form, counter_price: e.target.value })}
               />
             </label>
             <label>

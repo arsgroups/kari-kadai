@@ -26,6 +26,8 @@ create table if not exists products (
   sales_to_inventory_factor numeric not null default 1,
   default_purchase_price numeric,
   default_selling_price numeric,
+  restaurant_price numeric, -- selling price shown by default on Restaurant channel sales
+  counter_price numeric, -- selling price shown by default on Counter / Home Delivery channel sales
   low_stock_threshold numeric not null default 0, -- minimum stock
   opening_stock numeric not null default 0,
   opening_stock_value numeric not null default 0,
