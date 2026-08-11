@@ -123,7 +123,7 @@ export default function NewSaleInvoiceTab() {
   const channelProducts = useMemo(
     () =>
       products
-        .filter((p) => !p.supplier_only && channelConfig[p.id]?.[channel]?.is_visible !== false)
+        .filter((p) => channelConfig[p.id]?.[channel]?.is_visible !== false)
         .map((p) => ({ ...p, channelName: channelConfig[p.id]?.[channel]?.display_name || p.name })),
     [products, channelConfig, channel]
   )

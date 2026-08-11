@@ -332,16 +332,16 @@ export default function ProductsTab() {
                 />
                 <strong>Supplier item</strong>
                 <span className="muted" style={{ fontSize: '0.8rem' }}>
-                  — purchase-only, hidden from every Sales channel (still shows in Purchase Invoice)
+                  — always shows in Purchase Invoice; use Channel Availability below to control Sales visibility
                 </span>
               </label>
               <h4 style={{ marginBottom: '0.2rem' }}>Channel Availability</h4>
               <p className="muted" style={{ fontSize: '0.8rem', marginTop: 0 }}>
-                {form.supplier_only
-                  ? 'Not applicable — this item is marked Supplier-only above, so it will be hidden from all sales channels regardless of these settings.'
-                  : 'By default this item shows in every sales channel under its own name. Uncheck a channel to hide it there, or give it a different name for that channel (e.g. "Mutton" in Restaurant, "Fresh Goat/Lamb" elsewhere).'}
+                By default this item shows in every sales channel under its own name. Uncheck a channel to hide it
+                there, or give it a different name for that channel (e.g. "Mutton" in Restaurant, "Fresh Goat/Lamb"
+                elsewhere).
               </p>
-              {!form.supplier_only && CHANNELS.map((ch) => (
+              {CHANNELS.map((ch) => (
                 <div key={ch} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.4rem' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', minWidth: 150 }}>
                     <input
@@ -421,16 +421,15 @@ export default function ProductsTab() {
                           Cut from {r.cutFrom}
                         </div>
                       )}
-                      {r.supplier_only ? (
+                      {r.supplier_only && (
                         <div className="muted" style={{ fontSize: '0.75rem' }}>
-                          Supplier item (purchase-only)
+                          Supplier item
                         </div>
-                      ) : (
-                        r.hiddenChannels.length > 0 && (
-                          <div className="muted" style={{ fontSize: '0.75rem' }}>
-                            Hidden from: {r.hiddenChannels.join(', ')}
-                          </div>
-                        )
+                      )}
+                      {r.hiddenChannels.length > 0 && (
+                        <div className="muted" style={{ fontSize: '0.75rem' }}>
+                          Hidden from: {r.hiddenChannels.join(', ')}
+                        </div>
                       )}
                     </td>
                     <td>{r.category}</td>
