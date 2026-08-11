@@ -65,7 +65,17 @@ export default function SaleInvoicesListTab() {
   }
 
   if (viewingInvoiceId) {
-    return <SaleInvoiceView invoiceId={viewingInvoiceId} onClose={() => setViewingInvoiceId(null)} />
+    return (
+      <SaleInvoiceView
+        invoiceId={viewingInvoiceId}
+        onClose={() => setViewingInvoiceId(null)}
+        onDeleted={() => {
+          setViewingInvoiceId(null)
+          setItemsByInvoice({})
+          load()
+        }}
+      />
+    )
   }
 
   const totalAmount = rows.reduce((sum, r) => sum + r.total, 0)

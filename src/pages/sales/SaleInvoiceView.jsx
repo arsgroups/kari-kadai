@@ -20,10 +20,12 @@ function loadImageAsDataUrl(url) {
     )
 }
 
-export default function SaleInvoiceView({ invoiceId, onClose }) {
+export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   const [invoice, setInvoice] = useState(null)
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   useEffect(() => {
     load()
@@ -105,6 +107,38 @@ export default function SaleInvoiceView({ invoiceId, onClose }) {
     doc.save(`${invoice.invoice_number}.pdf`)
   }
 
+  async function handleDelete() {
+    if (!window.confirm(`Delete invoice ${invoice.invoice_number}? This will restore the stock it deducted and cannot be undone.`))
+      return
+    setDeleting(true)
+    setDeleteError('')
+    // Reverse the stock deducted by this invoice's items first — deleting the
+    // invoice cascades away the line items, but the stock_movements they
+    // logged aren't linked by a foreign key, so they'd otherwise be orphaned
+    // and leave stock permanently understated.
+    const itemIds = items.map((it) => it.id)
+    if (itemIds.length) {
+      const { error: stockError } = await supabase
+        .from('stock_movements')
+        .delete()
+        .eq('reference_type', 'sale')
+        .in('reference_id', itemIds)
+      if (stockError) {
+        setDeleting(false)
+        setDeleteError(stockError.message)
+        return
+      }
+    }
+    const { error } = await supabase.from('sale_invoices').delete().eq('id', invoiceId)
+    setDeleting(false)
+    if (error) {
+      setDeleteError(error.message)
+      return
+    }
+    if (onDeleted) onDeleted()
+    else if (onClose) onClose()
+  }
+
   if (loading) return <p className="muted">Loading invoice…</p>
   if (!invoice) return <p className="inline-error">Invoice not found.</p>
 
@@ -121,12 +155,16 @@ export default function SaleInvoiceView({ invoiceId, onClose }) {
         <button className="btn-secondary" onClick={downloadPdf}>
           Download PDF
         </button>
+        <button className="btn-danger" disabled={deleting} onClick={handleDelete}>
+          {deleting ? 'Deleting…' : 'Delete Invoice'}
+        </button>
         {onClose && (
           <button className="btn-secondary" onClick={onClose}>
             Close
           </button>
         )}
       </div>
+      {deleteError && <div className="inline-error no-print">{deleteError}</div>}
 
       <div className="invoice-sheet">
         <img src={invoiceHeaderImg} alt={COMPANY.name} className="invoice-banner" />

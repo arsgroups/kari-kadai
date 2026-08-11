@@ -51,6 +51,23 @@ export default function CustomerEditView({ customerId, onDone }) {
     onDone()
   }
 
+  async function handleDelete() {
+    if (!window.confirm(`Delete customer "${form.name}"? This cannot be undone.`)) return
+    setSaving(true)
+    setError('')
+    const { error } = await supabase.from('customers').delete().eq('id', customerId)
+    setSaving(false)
+    if (error) {
+      setError(
+        error.code === '23503'
+          ? 'This customer can’t be deleted because they have existing sale invoices or payments linked to them. Mark them inactive instead.'
+          : error.message
+      )
+      return
+    }
+    onDone()
+  }
+
   if (!form) return <p className="muted">Loading…</p>
 
   return (
@@ -115,9 +132,14 @@ export default function CustomerEditView({ customerId, onDone }) {
                       <option value="inactive">Inactive</option>
                     </select>
                   </label>
-                  <button className="btn" type="submit" disabled={saving}>
-                    {saving ? 'Saving…' : 'Save'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button className="btn" type="submit" disabled={saving}>
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button type="button" className="btn-danger" disabled={saving} onClick={handleDelete}>
+                      Delete
+                    </button>
+                  </div>
                 </form>
                 {error && <div className="inline-error">{error}</div>}
               </div>

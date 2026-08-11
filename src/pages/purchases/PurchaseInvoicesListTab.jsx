@@ -18,6 +18,7 @@ export default function PurchaseInvoicesListTab() {
   const [filters, setFilters] = useState(emptyFilters)
   const [expandedId, setExpandedId] = useState(null)
   const [itemsByInvoice, setItemsByInvoice] = useState({})
+  const [deletingId, setDeletingId] = useState(null)
 
   useEffect(() => {
     supabase.from('suppliers').select('id, name').order('name').then(({ data }) => setSuppliers(data ?? []))
@@ -60,6 +61,51 @@ export default function PurchaseInvoicesListTab() {
         .eq('purchase_invoice_id', invoiceId)
       setItemsByInvoice({ ...itemsByInvoice, [invoiceId]: data ?? [] })
     }
+  }
+
+  async function handleDelete(invoice) {
+    if (
+      !window.confirm(
+        `Delete invoice ${invoice.invoice_number}? This restores the stock it added but won't adjust this item's average cost. This cannot be undone.`
+      )
+    )
+      return
+    setDeletingId(invoice.id)
+    setError('')
+    const { data: itemRows, error: itemsError } = await supabase
+      .from('purchase_invoice_items')
+      .select('id')
+      .eq('purchase_invoice_id', invoice.id)
+    if (itemsError) {
+      setDeletingId(null)
+      setError(itemsError.message)
+      return
+    }
+    const itemIds = (itemRows ?? []).map((it) => it.id)
+    if (itemIds.length) {
+      const { error: stockError } = await supabase
+        .from('stock_movements')
+        .delete()
+        .eq('reference_type', 'purchase')
+        .in('reference_id', itemIds)
+      if (stockError) {
+        setDeletingId(null)
+        setError(stockError.message)
+        return
+      }
+    }
+    const { error: deleteError } = await supabase.from('purchase_invoices').delete().eq('id', invoice.id)
+    setDeletingId(null)
+    if (deleteError) {
+      setError(deleteError.message)
+      return
+    }
+    setItemsByInvoice((prev) => {
+      const next = { ...prev }
+      delete next[invoice.id]
+      return next
+    })
+    load()
   }
 
   const totalAmount = rows.reduce((sum, r) => sum + r.total, 0)
@@ -148,6 +194,7 @@ export default function PurchaseInvoicesListTab() {
                 <th>Total</th>
                 <th>Payment</th>
                 <th>Source</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -175,11 +222,16 @@ export default function PurchaseInvoicesListTab() {
                         {r.source === 'imported' ? 'Imported' : 'Manual'}
                       </span>
                     </td>
+                    <td>
+                      <button className="btn-danger" disabled={deletingId === r.id} onClick={() => handleDelete(r)}>
+                        {deletingId === r.id ? 'Deleting…' : 'Delete'}
+                      </button>
+                    </td>
                   </tr>
                   {expandedId === r.id && (
                     <tr>
                       <td></td>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <table className="data-table">
                           <thead>
                             <tr>
@@ -220,7 +272,7 @@ export default function PurchaseInvoicesListTab() {
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="muted">
+                  <td colSpan={10} className="muted">
                     No purchase invoices in this range.
                   </td>
                 </tr>

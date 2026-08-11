@@ -193,6 +193,26 @@ export default function ProductsTab() {
     load()
   }
 
+  async function handleDelete() {
+    if (!form.id) return
+    if (!window.confirm(`Delete "${form.name}"? This cannot be undone.`)) return
+    setSaving(true)
+    setError('')
+    const { error } = await supabase.from('products').delete().eq('id', form.id)
+    setSaving(false)
+    if (error) {
+      setError(
+        error.code === '23503'
+          ? 'This item can’t be deleted because it’s linked to existing sales, purchases, or stock records. Use Deactivate instead.'
+          : error.message
+      )
+      return
+    }
+    setShowForm(false)
+    setForm(emptyForm)
+    load()
+  }
+
   const categories = [...new Set(rows.map((r) => r.category).filter(Boolean))]
   const visibleRows = lowStockOnly
     ? rows.filter((r) => !r.cutFrom && r.current_stock <= r.low_stock_threshold)
@@ -410,6 +430,11 @@ export default function ProductsTab() {
               >
                 Cancel
               </button>
+              {form.id && (
+                <button type="button" className="btn-danger" disabled={saving} onClick={handleDelete}>
+                  Delete
+                </button>
+              )}
             </div>
           </form>
           {error && <div className="inline-error">{error}</div>}

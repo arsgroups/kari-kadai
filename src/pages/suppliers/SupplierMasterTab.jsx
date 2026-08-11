@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatMoney } from '../../lib/format'
 
-const emptyForm = { id: null, name: '', phone: '', address: '', gst_registered: true, credit_days: '' }
+const emptyForm = { id: null, name: '', phone: '', address: '', gst_registered: true, credit_days: '', is_active: true }
 
 export default function SupplierMasterTab() {
   const [rows, setRows] = useState([])
@@ -34,6 +34,7 @@ export default function SupplierMasterTab() {
         address: data.address ?? '',
         gst_registered: data.gst_registered,
         credit_days: data.credit_days ?? '',
+        is_active: data.is_active,
       })
       setShowForm(true)
     }
@@ -50,6 +51,7 @@ export default function SupplierMasterTab() {
       address: form.address || null,
       gst_registered: form.gst_registered,
       credit_days: form.credit_days === '' ? null : Number(form.credit_days),
+      is_active: form.id ? form.is_active : true,
     }
     const { error } = form.id
       ? await supabase.from('suppliers').update(payload).eq('id', form.id)
@@ -58,6 +60,26 @@ export default function SupplierMasterTab() {
     setSaving(false)
     if (error) {
       setError(error.message)
+      return
+    }
+    setShowForm(false)
+    setForm(emptyForm)
+    load()
+  }
+
+  async function handleDelete() {
+    if (!form.id) return
+    if (!window.confirm(`Delete supplier "${form.name}"? This cannot be undone.`)) return
+    setSaving(true)
+    setError('')
+    const { error } = await supabase.from('suppliers').delete().eq('id', form.id)
+    setSaving(false)
+    if (error) {
+      setError(
+        error.code === '23503'
+          ? 'This supplier can’t be deleted because it has existing purchase invoices or payments linked to it. Mark it inactive instead.'
+          : error.message
+      )
       return
     }
     setShowForm(false)
@@ -114,6 +136,18 @@ export default function SupplierMasterTab() {
                 <option value="no">No — doesn't charge GST</option>
               </select>
             </label>
+            {form.id && (
+              <label>
+                <span style={{ display: 'block', marginBottom: '0.3rem' }}>Status</span>
+                <select
+                  value={form.is_active ? 'active' : 'inactive'}
+                  onChange={(e) => setForm({ ...form, is_active: e.target.value === 'active' })}
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </label>
+            )}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button className="btn" type="submit" disabled={saving}>
                 {saving ? 'Saving…' : 'Save'}
@@ -121,6 +155,11 @@ export default function SupplierMasterTab() {
               <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
                 Cancel
               </button>
+              {form.id && (
+                <button type="button" className="btn-danger" disabled={saving} onClick={handleDelete}>
+                  Delete
+                </button>
+              )}
             </div>
           </form>
           {error && <div className="inline-error">{error}</div>}
