@@ -498,10 +498,23 @@ alter table user_roles enable row level security;
 drop policy if exists "authenticated_read" on user_roles;
 create policy "authenticated_read" on user_roles for select to authenticated using (true);
 
+-- Admin checks go through this security-definer function rather than an
+-- inline subquery on user_roles inside its own policy — querying user_roles
+-- directly from within a user_roles policy triggers that same policy again,
+-- causing "infinite recursion detected in policy" (42P17). A security-definer
+-- function runs with its owner's privileges, bypassing RLS for this internal
+-- lookup and breaking the cycle.
+create or replace function is_admin() returns boolean
+language sql security definer stable
+set search_path = public
+as $$
+  select exists (select 1 from user_roles where user_id = auth.uid() and role = 'admin');
+$$;
+
 drop policy if exists "admins_write" on user_roles;
 create policy "admins_write" on user_roles for all to authenticated
-  using (exists (select 1 from user_roles ur where ur.user_id = auth.uid() and ur.role = 'admin'))
-  with check (exists (select 1 from user_roles ur where ur.user_id = auth.uid() and ur.role = 'admin'));
+  using (is_admin())
+  with check (is_admin());
 
 -- After running this file, mark your own login as admin:
 --   insert into user_roles (user_id, role)
@@ -513,7 +526,7 @@ create policy "admins_write" on user_roles for all to authenticated
 create or replace view admin_user_directory as
 select u.id as user_id, u.email, u.created_at
 from auth.users u
-where exists (select 1 from user_roles ur where ur.user_id = auth.uid() and ur.role = 'admin');
+where is_admin();
 
 grant select on admin_user_directory to authenticated;
 
