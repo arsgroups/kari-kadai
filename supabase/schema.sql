@@ -508,6 +508,15 @@ create policy "admins_write" on user_roles for all to authenticated
 --   select id, 'admin' from auth.users where email = 'your-login-email'
 --   on conflict (user_id) do update set role = 'admin';
 
+-- Admin-only view of user emails, so Settings can list "who's who" to assign
+-- roles against (auth.users isn't otherwise reachable from the app's API).
+create or replace view admin_user_directory as
+select u.id as user_id, u.email, u.created_at
+from auth.users u
+where exists (select 1 from user_roles ur where ur.user_id = auth.uid() and ur.role = 'admin');
+
+grant select on admin_user_directory to authenticated;
+
 -- ============================================================================
 -- SEED DATA
 -- ============================================================================
