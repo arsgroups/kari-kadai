@@ -18,9 +18,17 @@ delete from yield_configurations;
 delete from sales_legacy;
 delete from purchases_legacy;
 
+-- Also wipe all current Sale Invoices and Purchase Invoices (their line
+-- items cascade-delete automatically), per explicit request to clear
+-- everything and start fresh.
+delete from sale_invoices;
+delete from purchase_invoices;
+
 delete from products;
 
 alter sequence item_code_seq restart with 1;
+alter sequence sale_invoice_seq restart with 1;
+alter sequence purchase_invoice_seq restart with 1;
 
 with new_products as (
   insert into products (name, category, unit, purchase_unit, sales_unit, low_stock_threshold) values
