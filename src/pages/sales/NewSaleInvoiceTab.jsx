@@ -113,6 +113,22 @@ export default function NewSaleInvoiceTab() {
       })
   }, [customerId])
 
+  // Re-price any lines that already have an item picked when the channel
+  // changes, so the cashier doesn't have to re-select each item to see the
+  // new channel's price (still editable afterwards on a per-line basis).
+  useEffect(() => {
+    setLines((prev) =>
+      prev.map((l) => {
+        if (!l.product_id) return l
+        const product = products.find((p) => p.id === l.product_id)
+        const customPrice = customerPrices[l.product_id]
+        const channelPrice = channel === 'Restaurant' ? product?.restaurant_price : product?.counter_price
+        return { ...l, rate: customPrice ?? channelPrice ?? product?.default_selling_price ?? l.rate }
+      })
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel])
+
   const requiresCustomer = channel !== 'Counter'
   const filteredCustomers = useMemo(() => customers.filter((c) => c.type === channel), [customers, channel])
   const rate = getRate(date)
