@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { round2 } from '../../lib/gst'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
+import ReportPrintHeader from '../../components/ReportPrintHeader'
 
 // Suggests the next unfiled calendar quarter, e.g. if today is in Q1 it suggests Q1 (Jan-Mar).
 function suggestQuarter() {
@@ -153,6 +154,7 @@ export default function GstReturnsTab() {
 
   return (
     <div>
+      <ReportPrintHeader title="GST Return" />
       <div className="toolbar">
         <button className="btn-secondary" onClick={newReturn}>
           + New Quarter

@@ -13,6 +13,7 @@ import {
 } from 'recharts'
 import { supabase } from '../../lib/supabaseClient'
 import { formatMoney, toISODate } from '../../lib/format'
+import ReportPrintHeader from '../../components/ReportPrintHeader'
 
 function daysAgo(n) {
   const d = new Date()
@@ -131,6 +132,7 @@ export default function DashboardTab() {
 
   return (
     <div>
+      <ReportPrintHeader title="Dashboard" />
       <div className="card">
         <h3>Sales & Purchases Trend (last 30 days)</h3>
         <ResponsiveContainer width="100%" height={280}>

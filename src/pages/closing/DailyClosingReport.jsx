@@ -50,7 +50,6 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     const bankSales = salesRows.filter((s) => s.payment_type === 'Bank').reduce((sum, s) => sum + s.total, 0)
     const creditSales = salesRows.filter((s) => s.payment_type === 'Credit').reduce((sum, s) => sum + s.total, 0)
     const totalSales = cashSales + bankSales + creditSales
-    const salesNet = salesRows.reduce((sum, s) => sum + s.subtotal, 0)
 
     const byChannel = {}
     salesRows.forEach((s) => {
@@ -59,7 +58,6 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
 
     const purchaseRows = purchases ?? []
     const totalPurchases = purchaseRows.reduce((sum, p) => sum + p.total, 0)
-    const purchasesNet = purchaseRows.reduce((sum, p) => sum + p.subtotal, 0)
 
     const expenseEntries = (expenseRows ?? []).filter((e) => e.entry_type === 'expense')
     const totalExpenses = expenseEntries.reduce((sum, e) => sum + e.amount, 0)
@@ -77,9 +75,6 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     const totalOutstanding = (outstandingRows ?? []).reduce((sum, r) => sum + r.outstanding, 0)
     const creditCollectedToday = (payments ?? []).reduce((sum, p) => sum + p.amount, 0)
 
-    const grossProfit = round2(salesNet - purchasesNet)
-    const netProfit = round2(grossProfit - totalExpenses)
-
     setData({
       cashSales,
       bankSales,
@@ -95,8 +90,6 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       variance,
       totalOutstanding,
       creditCollectedToday,
-      grossProfit,
-      netProfit,
     })
     setLoading(false)
   }
@@ -111,9 +104,10 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     doc.setFontSize(10)
     doc.text(`Date: ${formatDate(date)}`, 14, 34)
     doc.text(`Operator: ${operatorEmail}`, 14, 39)
+    doc.text(`Printed on: ${new Date().toLocaleString('en-SG')}`, 14, 44)
 
     autoTable(doc, {
-      startY: 46,
+      startY: 51,
       head: [['Summary', 'Amount (SGD)']],
       body: [
         ['Cash Sales', formatMoney(data.cashSales)],
@@ -128,8 +122,6 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
         ['Expected Cash', formatMoney(data.expectedCash)],
         ['Actual Cash Counted', data.actualCash === null ? 'Not entered' : formatMoney(data.actualCash)],
         ['Variance', data.variance === null ? '—' : formatMoney(data.variance)],
-        ['Gross Profit', formatMoney(data.grossProfit)],
-        ['Net Profit', formatMoney(data.netProfit)],
       ],
       styles: { fontSize: 9 },
       headStyles: { fillColor: [122, 31, 31] },
@@ -193,6 +185,9 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
             <h1 style={{ margin: 0 }}>DAILY CLOSING REPORT</h1>
             <p style={{ margin: '0.2rem 0' }}>Date: <strong>{formatDate(date)}</strong></p>
             <p style={{ margin: '0.2rem 0' }}>Operator: {operatorEmail}</p>
+            <p className="muted" style={{ margin: '0.2rem 0', fontSize: '0.85rem' }}>
+              Printed on {new Date().toLocaleString('en-SG')}
+            </p>
           </div>
         </div>
 
@@ -309,24 +304,6 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
                 </td>
               </tr>
             )}
-          </tbody>
-        </table>
-
-        <h3>Profit Summary</h3>
-        <table className="data-table" style={{ maxWidth: 480 }}>
-          <tbody>
-            <tr>
-              <td>Gross Profit (Sales − COGS, net of GST)</td>
-              <td>{formatMoney(data.grossProfit)}</td>
-            </tr>
-            <tr style={{ fontWeight: 700 }}>
-              <td>Net Profit (Gross Profit − Expenses)</td>
-              <td>
-                <span className={data.netProfit >= 0 ? 'tag tag-success' : 'tag tag-danger'}>
-                  {formatMoney(data.netProfit)}
-                </span>
-              </td>
-            </tr>
           </tbody>
         </table>
 

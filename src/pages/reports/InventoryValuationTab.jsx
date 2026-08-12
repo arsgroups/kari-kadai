@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatMoney } from '../../lib/format'
 import ExportButtons from '../../components/ExportButtons'
+import ReportPrintHeader from '../../components/ReportPrintHeader'
 
 export default function InventoryValuationTab() {
   const [rows, setRows] = useState([])
@@ -49,6 +50,7 @@ export default function InventoryValuationTab() {
 
   return (
     <div>
+      <ReportPrintHeader title="Inventory Valuation" />
       <p className="muted" style={{ fontSize: '0.85rem' }}>
         Valuation uses each item's running weighted-average cost (updated by purchases and, for
         cut/processed items, their allocated processing cost) — falling back to its default purchase

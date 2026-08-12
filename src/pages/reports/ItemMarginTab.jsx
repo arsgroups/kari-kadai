@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { formatMoney, toISODate } from '../../lib/format'
 import { round2 } from '../../lib/gst'
 import ExportButtons from '../../components/ExportButtons'
+import ReportPrintHeader from '../../components/ReportPrintHeader'
 
 function firstOfMonth() {
   const d = new Date()
@@ -57,6 +58,7 @@ export default function ItemMarginTab() {
 
   return (
     <div>
+      <ReportPrintHeader title="Item Margin Report" />
       <div className="card">
         <div className="form-grid">
           <label>

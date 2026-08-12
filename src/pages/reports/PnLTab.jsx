@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { round2 } from '../../lib/gst'
 import { formatMoney, toISODate } from '../../lib/format'
 import ExportButtons from '../../components/ExportButtons'
+import ReportPrintHeader from '../../components/ReportPrintHeader'
 
 function firstOfMonth() {
   const d = new Date()
@@ -61,6 +62,7 @@ export default function PnLTab() {
 
   return (
     <div>
+      <ReportPrintHeader title="Profit & Loss" />
       <div className="card">
         <div className="form-grid">
           <label>

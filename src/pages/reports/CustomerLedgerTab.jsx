@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
 import ExportButtons from '../../components/ExportButtons'
+import ReportPrintHeader from '../../components/ReportPrintHeader'
 
 function firstOfMonth() {
   const d = new Date()
@@ -82,6 +83,7 @@ export default function CustomerLedgerTab() {
 
   return (
     <div>
+      <ReportPrintHeader title="Customer Ledger" />
       <div className="card">
         <div className="form-grid">
           <label>
