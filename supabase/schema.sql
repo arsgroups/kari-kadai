@@ -314,6 +314,7 @@ create trigger purchase_item_stock_movement
 create table if not exists supplier_payments (
   id uuid primary key default gen_random_uuid(),
   supplier_id uuid not null references suppliers(id) on delete cascade,
+  invoice_id uuid references purchase_invoices(id) on delete set null, -- optional: ties a payment to one invoice
   date date not null default current_date,
   amount numeric not null,
   payment_type text not null check (payment_type in ('Cash','Bank')),

@@ -73,6 +73,9 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     doc.text(`Invoice No: ${invoice.invoice_number}`, 150, metaY + 3)
     doc.text(`Date: ${formatDate(invoice.date)}`, 150, metaY + 8)
     doc.text(`Payment: ${invoice.payment_type}`, 150, metaY + 13)
+    if (invoice.payment_type === 'Credit' && invoice.due_date) {
+      doc.text(`Due: ${formatDate(invoice.due_date)}`, 150, metaY + 18)
+    }
 
     doc.text(`Customer: ${invoice.customers?.name ?? 'Counter Sale'}`, 14, metaY + 10)
     if (invoice.customers?.address) doc.text(invoice.customers.address, 14, metaY + 15)
@@ -180,6 +183,9 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
             <p style={{ margin: '0.2rem 0' }}>Invoice No: <strong>{invoice.invoice_number}</strong></p>
             <p style={{ margin: '0.2rem 0' }}>Date: {formatDate(invoice.date)}</p>
             <p style={{ margin: '0.2rem 0' }}>Payment: {invoice.payment_type}</p>
+            {invoice.payment_type === 'Credit' && invoice.due_date && (
+              <p style={{ margin: '0.2rem 0' }}>Due: {formatDate(invoice.due_date)}</p>
+            )}
           </div>
         </div>
 

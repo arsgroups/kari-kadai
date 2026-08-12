@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatMoney } from '../../lib/format'
 
-export default function CustomerPriceListPanel({ customerId }) {
+export default function CustomerPriceListPanel({ customerId, customerType }) {
   const [products, setProducts] = useState([])
   const [prices, setPrices] = useState({}) // product_id -> { price, updated_at }
   const [loading, setLoading] = useState(true)
@@ -13,19 +13,40 @@ export default function CustomerPriceListPanel({ customerId }) {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId])
+  }, [customerId, customerType])
 
   async function load() {
     setLoading(true)
-    const [{ data: productData }, { data: priceData }] = await Promise.all([
+    const [{ data: productData }, { data: channelData }, { data: priceData }] = await Promise.all([
       supabase
         .from('products')
-        .select('id, name, category, default_selling_price')
+        .select('id, name, category, default_selling_price, restaurant_price, counter_price, supplier_only')
         .eq('is_active', true)
         .order('name'),
+      supabase.from('product_channel_config').select('product_id, channel, display_name, is_visible'),
       supabase.from('customer_item_prices').select('product_id, price, updated_at').eq('customer_id', customerId),
     ])
-    setProducts(productData ?? [])
+
+    const channelMap = {}
+    ;(channelData ?? []).forEach((row) => {
+      if (!channelMap[row.product_id]) channelMap[row.product_id] = {}
+      channelMap[row.product_id][row.channel] = { display_name: row.display_name, is_visible: row.is_visible }
+    })
+
+    // Same channel a customer's type maps to on the Sales invoice ('Restaurant'
+    // or 'Home Delivery') — only items actually offered there are worth pricing.
+    const visible = (productData ?? [])
+      .filter((p) => !p.supplier_only && channelMap[p.id]?.[customerType]?.is_visible !== false)
+      .map((p) => {
+        const channelPrice = customerType === 'Restaurant' ? p.restaurant_price : p.counter_price
+        return {
+          ...p,
+          displayName: channelMap[p.id]?.[customerType]?.display_name || p.name,
+          channelDefaultPrice: channelPrice ?? p.default_selling_price,
+        }
+      })
+    setProducts(visible)
+
     const map = {}
     ;(priceData ?? []).forEach((row) => {
       map[row.product_id] = { price: String(row.price), updated_at: row.updated_at }
@@ -71,53 +92,57 @@ export default function CustomerPriceListPanel({ customerId }) {
   return (
     <div>
       <p className="muted" style={{ fontSize: '0.85rem' }}>
-        Leave a Customer Price blank to use the item's Default Selling Price. Selecting this customer
-        on a Sales Invoice loads these prices automatically — still editable per line if needed.
+        Only items offered on this customer's channel ({customerType}) are listed. Default Price is that item's{' '}
+        {customerType} selling price (falls back to its Default Selling Price if not set). Leave Customer Price
+        blank to keep using that — type an amount to set this customer's exclusive price, which the Sales Invoice
+        will use instead once this customer is selected.
       </p>
 
       {loading ? (
         <p className="muted">Loading…</p>
       ) : (
         <>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Product Name</th>
-                <th>Category</th>
-                <th>Default Price</th>
-                <th>Customer Price</th>
-                <th>Last Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.name}</td>
-                  <td>{p.category}</td>
-                  <td>{p.default_selling_price != null ? formatMoney(p.default_selling_price) : '—'}</td>
-                  <td>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={prices[p.id]?.price ?? ''}
-                      placeholder={p.default_selling_price != null ? String(p.default_selling_price) : ''}
-                      onChange={(e) => setPrice(p.id, e.target.value)}
-                      style={{ width: 110 }}
-                    />
-                  </td>
-                  <td>{prices[p.id]?.updated_at ? new Date(prices[p.id].updated_at).toLocaleString('en-SG') : '—'}</td>
-                </tr>
-              ))}
-              {products.length === 0 && (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan={5} className="muted">
-                    No active items yet.
-                  </td>
+                  <th>Product Name</th>
+                  <th>Category</th>
+                  <th>Default Price</th>
+                  <th>Customer Price</th>
+                  <th>Last Updated</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {products.map((p) => (
+                  <tr key={p.id}>
+                    <td>{p.displayName}</td>
+                    <td>{p.category}</td>
+                    <td>{p.channelDefaultPrice != null ? formatMoney(p.channelDefaultPrice) : '—'}</td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={prices[p.id]?.price ?? ''}
+                        placeholder={p.channelDefaultPrice != null ? String(p.channelDefaultPrice) : ''}
+                        onChange={(e) => setPrice(p.id, e.target.value)}
+                        style={{ width: 110 }}
+                      />
+                    </td>
+                    <td>{prices[p.id]?.updated_at ? new Date(prices[p.id].updated_at).toLocaleString('en-SG') : '—'}</td>
+                  </tr>
+                ))}
+                {products.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="muted">
+                      No items are offered on this customer's channel yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
           <button className="btn" style={{ marginTop: '1rem' }} onClick={handleSave} disabled={saving}>
             {saving ? 'Saving…' : 'Save Pricing'}
           </button>

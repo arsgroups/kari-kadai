@@ -217,6 +217,18 @@ button {
 
 .card h2, .card h3 { margin-top: 0; }
 
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.report-grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -340,6 +352,7 @@ table.data-table {
   border-radius: 10px;
   padding: 2.5rem;
   max-width: 800px;
+  overflow-x: auto; /* wide tables (invoice items, closing report) scroll instead of breaking layout */
 }
 
 .invoice-banner {
@@ -495,6 +508,11 @@ table.data-table {
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .report-grid-2col {
+    grid-template-columns: 1fr;
+    gap: 1rem;
   }
 
   .invoice-sheet {

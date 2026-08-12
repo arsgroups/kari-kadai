@@ -11,7 +11,6 @@ export default function Dashboard() {
   const [todaySales, setTodaySales] = useState(0)
   const [todayPurchases, setTodayPurchases] = useState(0)
   const [todayExpenses, setTodayExpenses] = useState(0)
-  const [todayProfit, setTodayProfit] = useState(0)
 
   const [totalCreditSales, setTotalCreditSales] = useState(0)
   const [creditCollectedToday, setCreditCollectedToday] = useState(0)
@@ -51,15 +50,12 @@ export default function Dashboard() {
     ])
 
     const salesToday = (salesRes.data ?? []).reduce((sum, s) => sum + s.total, 0)
-    const salesTodayNet = (salesRes.data ?? []).reduce((sum, s) => sum + s.subtotal, 0)
     const purchasesToday = (purchasesRes.data ?? []).reduce((sum, p) => sum + p.total, 0)
-    const purchasesTodayNet = (purchasesRes.data ?? []).reduce((sum, p) => sum + p.subtotal, 0)
     const expensesToday = (pettyExpenseRes.data ?? []).reduce((sum, e) => sum + e.amount, 0)
 
     setTodaySales(salesToday)
     setTodayPurchases(purchasesToday)
     setTodayExpenses(expensesToday)
-    setTodayProfit(salesTodayNet - purchasesTodayNet - expensesToday)
 
     setTotalCreditSales((creditSalesRes.data ?? []).reduce((sum, s) => sum + s.total, 0))
     setCreditCollectedToday((creditPaymentsRes.data ?? []).reduce((sum, p) => sum + p.amount, 0))
@@ -94,12 +90,6 @@ export default function Dashboard() {
             <div className="tile">
               <div className="tile-label">Today's Expenses</div>
               <div className="tile-value">{formatMoney(todayExpenses)}</div>
-            </div>
-            <div className="tile">
-              <div className="tile-label">Today's Profit</div>
-              <div className="tile-value">
-                <span className={todayProfit >= 0 ? '' : 'tag tag-danger'}>{formatMoney(todayProfit)}</span>
-              </div>
             </div>
           </div>
 

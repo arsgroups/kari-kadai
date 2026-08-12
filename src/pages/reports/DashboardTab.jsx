@@ -146,7 +146,7 @@ export default function DashboardTab() {
         </ResponsiveContainer>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+      <div className="report-grid-2col">
         <div className="card">
           <h3>Sales by Product (this month)</h3>
           <ResponsiveContainer width="100%" height={240}>

@@ -21,6 +21,10 @@ export default function PurchaseInvoicesListTab() {
   const [expandedId, setExpandedId] = useState(null)
   const [itemsByInvoice, setItemsByInvoice] = useState({})
   const [deletingId, setDeletingId] = useState(null)
+  const [paidByInvoice, setPaidByInvoice] = useState({})
+  const [payingId, setPayingId] = useState(null)
+  const [paymentForm, setPaymentForm] = useState({ amount: '', payment_type: 'Cash', date: toISODate() })
+  const [payingSaving, setPayingSaving] = useState(false)
 
   useEffect(() => {
     supabase.from('suppliers').select('id, name').order('name').then(({ data }) => setSuppliers(data ?? []))
@@ -31,7 +35,7 @@ export default function PurchaseInvoicesListTab() {
     setError('')
     let query = supabase
       .from('purchase_invoices')
-      .select('id, invoice_number, date, subtotal, gst_amount, total, payment_type, source, note, suppliers(name)')
+      .select('id, invoice_number, date, supplier_id, subtotal, gst_amount, total, payment_type, source, note, suppliers(name)')
       .gte('date', filters.from)
       .lte('date', filters.to)
       .order('date', { ascending: false })
@@ -40,8 +44,27 @@ export default function PurchaseInvoicesListTab() {
     if (filters.source) query = query.eq('source', filters.source)
 
     const { data, error } = await query.limit(500)
-    if (error) setError(error.message)
-    else setRows(data ?? [])
+    if (error) {
+      setError(error.message)
+      setLoading(false)
+      return
+    }
+    setRows(data ?? [])
+
+    const invoiceIds = (data ?? []).map((r) => r.id)
+    if (invoiceIds.length) {
+      const { data: paymentRows } = await supabase
+        .from('supplier_payments')
+        .select('invoice_id, amount')
+        .in('invoice_id', invoiceIds)
+      const paidMap = {}
+      ;(paymentRows ?? []).forEach((p) => {
+        paidMap[p.invoice_id] = (paidMap[p.invoice_id] ?? 0) + p.amount
+      })
+      setPaidByInvoice(paidMap)
+    } else {
+      setPaidByInvoice({})
+    }
     setLoading(false)
   }
 
@@ -107,6 +130,46 @@ export default function PurchaseInvoicesListTab() {
       delete next[invoice.id]
       return next
     })
+    load()
+  }
+
+  function paymentStatus(invoice) {
+    if (invoice.payment_type !== 'Credit') return 'Paid'
+    const paid = paidByInvoice[invoice.id] ?? 0
+    if (paid <= 0) return 'Pending'
+    if (paid < invoice.total) return 'Partial'
+    return 'Paid'
+  }
+
+  function openPayment(invoice) {
+    const outstanding = Math.max(invoice.total - (paidByInvoice[invoice.id] ?? 0), 0)
+    setPayingId(invoice.id)
+    setPaymentForm({ amount: String(outstanding), payment_type: 'Cash', date: toISODate() })
+    setError('')
+  }
+
+  async function handleRecordPayment(invoice) {
+    const amount = Number(paymentForm.amount)
+    if (!amount || amount <= 0) {
+      setError('Enter a payment amount greater than 0.')
+      return
+    }
+    setPayingSaving(true)
+    setError('')
+    const { error: payError } = await supabase.from('supplier_payments').insert({
+      supplier_id: invoice.supplier_id,
+      invoice_id: invoice.id,
+      date: paymentForm.date,
+      amount,
+      payment_type: paymentForm.payment_type,
+      note: `Payment for invoice ${invoice.invoice_number}`,
+    })
+    setPayingSaving(false)
+    if (payError) {
+      setError(payError.message)
+      return
+    }
+    setPayingId(null)
     load()
   }
 
@@ -188,6 +251,7 @@ export default function PurchaseInvoicesListTab() {
             <thead>
               <tr>
                 <th></th>
+                <th></th>
                 <th>Invoice #</th>
                 <th>Date</th>
                 <th>Supplier</th>
@@ -195,14 +259,24 @@ export default function PurchaseInvoicesListTab() {
                 <th>GST</th>
                 <th>Total</th>
                 <th>Payment</th>
+                <th>Status</th>
                 <th>Source</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {rows.map((r) => {
+                const status = paymentStatus(r)
+                return (
                 <Fragment key={r.id}>
                   <tr>
+                    <td>
+                      {isAdmin && (
+                        <button className="btn-danger" disabled={deletingId === r.id} onClick={() => handleDelete(r)}>
+                          {deletingId === r.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                      )}
+                    </td>
                     <td>
                       <button className="btn-secondary" onClick={() => toggleExpand(r.id)}>
                         {expandedId === r.id ? '−' : '+'}
@@ -220,22 +294,80 @@ export default function PurchaseInvoicesListTab() {
                       </span>
                     </td>
                     <td>
+                      <span
+                        className={
+                          status === 'Paid' ? 'tag tag-success' : status === 'Partial' ? 'tag tag-warning' : 'tag tag-danger'
+                        }
+                      >
+                        {status}
+                      </span>
+                      {r.payment_type === 'Credit' && status !== 'Paid' && (
+                        <>
+                          {' '}
+                          <button className="btn-secondary" onClick={() => openPayment(r)}>
+                            Make Payment
+                          </button>
+                        </>
+                      )}
+                    </td>
+                    <td>
                       <span className={r.source === 'imported' ? 'tag tag-muted' : 'tag tag-success'}>
                         {r.source === 'imported' ? 'Imported' : 'Manual'}
                       </span>
                     </td>
-                    <td>
-                      {isAdmin && (
-                        <button className="btn-danger" disabled={deletingId === r.id} onClick={() => handleDelete(r)}>
-                          {deletingId === r.id ? 'Deleting…' : 'Delete'}
-                        </button>
-                      )}
-                    </td>
+                    <td></td>
                   </tr>
+                  {payingId === r.id && (
+                    <tr>
+                      <td></td>
+                      <td></td>
+                      <td colSpan={10}>
+                        <div className="form-grid" style={{ alignItems: 'end' }}>
+                          <label>
+                            Amount (SGD)
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={paymentForm.amount}
+                              onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                            />
+                          </label>
+                          <label>
+                            Payment Type
+                            <select
+                              value={paymentForm.payment_type}
+                              onChange={(e) => setPaymentForm({ ...paymentForm, payment_type: e.target.value })}
+                            >
+                              <option>Cash</option>
+                              <option>Bank</option>
+                            </select>
+                          </label>
+                          <label>
+                            Date
+                            <input
+                              type="date"
+                              value={paymentForm.date}
+                              onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                            />
+                          </label>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button className="btn" disabled={payingSaving} onClick={() => handleRecordPayment(r)}>
+                              {payingSaving ? 'Saving…' : 'Record Payment'}
+                            </button>
+                            <button className="btn-secondary" onClick={() => setPayingId(null)}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {expandedId === r.id && (
                     <tr>
                       <td></td>
-                      <td colSpan={9}>
+                      <td></td>
+                      <td colSpan={10}>
                         <table className="data-table">
                           <thead>
                             <tr>
@@ -273,10 +405,11 @@ export default function PurchaseInvoicesListTab() {
                     </tr>
                   )}
                 </Fragment>
-              ))}
+                )
+              })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="muted">
+                  <td colSpan={12} className="muted">
                     No purchase invoices in this range.
                   </td>
                 </tr>

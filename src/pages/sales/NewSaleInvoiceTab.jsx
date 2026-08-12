@@ -29,6 +29,8 @@ export default function NewSaleInvoiceTab() {
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [date, setDate] = useState(toISODate())
   const [paymentType, setPaymentType] = useState('Cash')
+  const [dueDate, setDueDate] = useState('')
+  const [dueDateTouched, setDueDateTouched] = useState(false)
   const [paidAmount, setPaidAmount] = useState('')
   const [paidAmountTouched, setPaidAmountTouched] = useState(false)
   const [remarks, setRemarks] = useState('')
@@ -40,7 +42,7 @@ export default function NewSaleInvoiceTab() {
   useEffect(() => {
     supabase
       .from('customers')
-      .select('id, name, type')
+      .select('id, name, type, credit_days')
       .eq('is_active', true)
       .order('name')
       .then(({ data }) => setCustomers(data ?? []))
@@ -129,6 +131,35 @@ export default function NewSaleInvoiceTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel])
 
+  // Credit is only offered for Restaurant customers — force back to Cash if
+  // the cashier switches to a channel that doesn't support it.
+  useEffect(() => {
+    if (channel !== 'Restaurant' && paymentType === 'Credit') {
+      setPaymentType('Cash')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel])
+
+  // Auto-fill the due date from the customer's credit terms whenever Credit
+  // is selected, unless the cashier has already edited it by hand.
+  useEffect(() => {
+    if (paymentType !== 'Credit') {
+      setDueDate('')
+      setDueDateTouched(false)
+      return
+    }
+    if (dueDateTouched) return
+    const customer = customers.find((c) => c.id === customerId)
+    if (customer?.credit_days != null) {
+      const d = new Date(date)
+      d.setDate(d.getDate() + Number(customer.credit_days))
+      setDueDate(toISODate(d))
+    } else {
+      setDueDate('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentType, customerId, date, customers])
+
   const requiresCustomer = channel !== 'Counter'
   const filteredCustomers = useMemo(() => customers.filter((c) => c.type === channel), [customers, channel])
   const rate = getRate(date)
@@ -211,6 +242,7 @@ export default function NewSaleInvoiceTab() {
         customer_id: requiresCustomer ? customerId : null,
         channel,
         payment_type: paymentType,
+        due_date: paymentType === 'Credit' && dueDate ? dueDate : null,
         subtotal,
         gst_amount: gstTotal,
         paid_amount: effectivePaid,
@@ -253,6 +285,8 @@ export default function NewSaleInvoiceTab() {
     setInvoiceNumber('')
     setPaidAmount('')
     setPaidAmountTouched(false)
+    setDueDate('')
+    setDueDateTouched(false)
     setRemarks('')
     setLines([emptyLine()])
   }
@@ -325,9 +359,22 @@ export default function NewSaleInvoiceTab() {
           >
             <option>Cash</option>
             <option>Bank</option>
-            <option>Credit</option>
+            {channel === 'Restaurant' && <option>Credit</option>}
           </select>
         </label>
+        {paymentType === 'Credit' && (
+          <label>
+            Due Date
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => {
+                setDueDate(e.target.value)
+                setDueDateTouched(true)
+              }}
+            />
+          </label>
+        )}
       </div>
 
       {customerId && Object.keys(customerPrices).length > 0 && (

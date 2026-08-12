@@ -152,7 +152,7 @@ export default function CustomerEditView({ customerId, onDone }) {
           {
             key: 'pricing',
             label: 'Customer Price List',
-            content: <CustomerPriceListPanel customerId={customerId} />,
+            content: <CustomerPriceListPanel customerId={customerId} customerType={form.type} />,
           },
         ]}
       />
