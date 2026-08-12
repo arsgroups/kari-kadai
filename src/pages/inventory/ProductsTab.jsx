@@ -452,11 +452,7 @@ export default function ProductsTab() {
               <tr>
                 <th>Item Code</th>
                 <th>Name</th>
-                <th>Category</th>
-                <th>Purchase Unit</th>
-                <th>Sales Unit</th>
                 <th>Current Stock</th>
-                <th>Min Stock</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -485,14 +481,10 @@ export default function ProductsTab() {
                         </div>
                       )}
                     </td>
-                    <td>{r.category}</td>
-                    <td>{r.purchase_unit}</td>
-                    <td>{r.sales_unit}</td>
                     <td>
                       {r.current_stock} {r.unit}{' '}
                       {low && <span className="tag tag-danger">Low</span>}
                     </td>
-                    <td>{r.low_stock_threshold}</td>
                     <td>
                       <span className={r.is_active ? 'tag tag-success' : 'tag tag-muted'}>
                         {r.is_active ? 'Active' : 'Inactive'}
@@ -511,7 +503,7 @@ export default function ProductsTab() {
               })}
               {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="muted">
+                  <td colSpan={5} className="muted">
                     No items found.
                   </td>
                 </tr>
