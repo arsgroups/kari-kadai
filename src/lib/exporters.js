@@ -2,8 +2,16 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
 import { COMPANY } from './companyInfo'
+import { formatMoney } from './format'
 
-// columns: [{ key, label }]  rows: [{ ...values }]
+function cellValue(row, column) {
+  const raw = row[column.key]
+  if (column.money) return raw === '' || raw == null ? '' : formatMoney(raw)
+  return raw ?? ''
+}
+
+// columns: [{ key, label, money? }]  rows: [{ ...values }] — mark a column
+// `money: true` so its values print/export with the S$ symbol.
 export function exportToPDF({ title, columns, rows, filename }) {
   const doc = new jsPDF()
   doc.setFontSize(12)
@@ -17,7 +25,7 @@ export function exportToPDF({ title, columns, rows, filename }) {
   autoTable(doc, {
     startY: 34,
     head: [columns.map((c) => c.label)],
-    body: rows.map((r) => columns.map((c) => String(r[c.key] ?? ''))),
+    body: rows.map((r) => columns.map((c) => String(cellValue(r, c)))),
     styles: { fontSize: 8 },
     headStyles: { fillColor: [122, 31, 31] },
   })
@@ -28,7 +36,7 @@ export function exportToExcel({ columns, rows, filename }) {
   const data = rows.map((r) => {
     const obj = {}
     columns.forEach((c) => {
-      obj[c.label] = r[c.key] ?? ''
+      obj[c.label] = cellValue(r, c)
     })
     return obj
   })

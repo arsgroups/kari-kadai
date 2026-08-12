@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatMoney } from '../../lib/format'
+import { useAuth } from '../../contexts/AuthContext'
 
 function currentMonth() {
   const d = new Date()
@@ -10,12 +11,15 @@ function currentMonth() {
 const emptyForm = { month: currentMonth(), category_id: '', description: '', amount: '', payment_method: 'Bank', remarks: '' }
 
 export default function MonthlyExpenseEntryTab() {
+  const { isAdmin } = useAuth()
   const [categories, setCategories] = useState([])
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState(emptyForm)
+  const [editingId, setEditingId] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
   const [newCategory, setNewCategory] = useState({ name: '', classification: 'fixed' })
 
   async function load() {
@@ -24,7 +28,7 @@ export default function MonthlyExpenseEntryTab() {
       supabase.from('expense_categories').select('id, name, classification').eq('is_active', true).order('name'),
       supabase
         .from('expenses')
-        .select('id, date, description, amount, payment_method, remarks, expense_categories(name, classification)')
+        .select('id, date, category_id, description, amount, payment_method, remarks, expense_categories(name, classification)')
         .eq('scope', 'monthly')
         .order('date', { ascending: false })
         .limit(200),
@@ -44,7 +48,7 @@ export default function MonthlyExpenseEntryTab() {
     if (!form.category_id || !form.amount) return
     setSaving(true)
     setError('')
-    const { error } = await supabase.from('expenses').insert({
+    const payload = {
       date: form.month,
       scope: 'monthly',
       entry_type: 'expense',
@@ -53,13 +57,47 @@ export default function MonthlyExpenseEntryTab() {
       amount: Number(form.amount),
       payment_method: form.payment_method,
       remarks: form.remarks || null,
-    })
+    }
+    const { error } = editingId
+      ? await supabase.from('expenses').update(payload).eq('id', editingId)
+      : await supabase.from('expenses').insert(payload)
     setSaving(false)
     if (error) {
       setError(error.message)
       return
     }
     setForm({ ...emptyForm, month: form.month })
+    setEditingId(null)
+    load()
+  }
+
+  function startEdit(entry) {
+    setForm({
+      month: entry.date,
+      category_id: entry.category_id ?? '',
+      description: entry.description ?? '',
+      amount: String(entry.amount),
+      payment_method: entry.payment_method ?? 'Bank',
+      remarks: entry.remarks ?? '',
+    })
+    setEditingId(entry.id)
+    setError('')
+  }
+
+  function cancelEdit() {
+    setForm({ ...emptyForm, month: form.month })
+    setEditingId(null)
+  }
+
+  async function handleDelete(entry) {
+    if (!window.confirm('Delete this monthly expense entry? This cannot be undone.')) return
+    setDeletingId(entry.id)
+    const { error } = await supabase.from('expenses').delete().eq('id', entry.id)
+    setDeletingId(null)
+    if (error) {
+      setError(error.message)
+      return
+    }
     load()
   }
 
@@ -125,9 +163,16 @@ export default function MonthlyExpenseEntryTab() {
             Remarks
             <input value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
           </label>
-          <button className="btn" type="submit" disabled={saving}>
-            {saving ? 'Saving…' : 'Add Expense'}
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn" type="submit" disabled={saving}>
+              {saving ? 'Saving…' : editingId ? 'Update Expense' : 'Add Expense'}
+            </button>
+            {editingId && (
+              <button type="button" className="btn-secondary" onClick={cancelEdit}>
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
         {error && <div className="inline-error">{error}</div>}
 
@@ -176,6 +221,7 @@ export default function MonthlyExpenseEntryTab() {
                 <th>Amount</th>
                 <th>Payment</th>
                 <th>Remarks</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -194,11 +240,21 @@ export default function MonthlyExpenseEntryTab() {
                   <td>{formatMoney(e.amount)}</td>
                   <td>{e.payment_method}</td>
                   <td>{e.remarks}</td>
+                  <td>
+                    <button className="btn-secondary" onClick={() => startEdit(e)}>
+                      Edit
+                    </button>{' '}
+                    {isAdmin && (
+                      <button className="btn-danger" disabled={deletingId === e.id} onClick={() => handleDelete(e)}>
+                        {deletingId === e.id ? 'Deleting…' : 'Delete'}
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
               {entries.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted">
+                  <td colSpan={8} className="muted">
                     No monthly expenses logged yet.
                   </td>
                 </tr>

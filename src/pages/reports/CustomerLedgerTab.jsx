@@ -118,9 +118,9 @@ export default function CustomerLedgerTab() {
                 { key: 'date', label: 'Date' },
                 { key: 'type', label: 'Type' },
                 { key: 'reference', label: 'Reference' },
-                { key: 'debit', label: 'Debit (Invoiced)' },
-                { key: 'credit', label: 'Credit (Paid)' },
-                { key: 'balance', label: 'Running Balance' },
+                { key: 'debit', label: 'Debit (Invoiced)', money: true },
+                { key: 'credit', label: 'Credit (Paid)', money: true },
+                { key: 'balance', label: 'Running Balance', money: true },
               ]}
               rows={exportRows}
             />

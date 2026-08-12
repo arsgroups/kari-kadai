@@ -84,9 +84,9 @@ export default function ItemMarginTab() {
           columns={[
             { key: 'name', label: 'Item' },
             { key: 'quantity', label: 'Qty Sold' },
-            { key: 'revenue', label: 'Revenue' },
-            { key: 'cost', label: 'Allocated Cost' },
-            { key: 'margin', label: 'Margin' },
+            { key: 'revenue', label: 'Revenue', money: true },
+            { key: 'cost', label: 'Allocated Cost', money: true },
+            { key: 'margin', label: 'Margin', money: true },
             { key: 'marginPct', label: 'Margin %' },
           ]}
           rows={rows}

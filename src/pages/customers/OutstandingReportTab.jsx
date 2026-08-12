@@ -101,7 +101,7 @@ export default function OutstandingReportTab() {
           columns={[
             { key: 'name', label: 'Customer' },
             { key: 'type', label: 'Type' },
-            { key: 'outstanding', label: 'Outstanding' },
+            { key: 'outstanding', label: 'Outstanding', money: true },
             { key: 'oldest_unpaid_since', label: 'Oldest Unpaid Since' },
             { key: 'age_days', label: 'Age (days)' },
           ]}

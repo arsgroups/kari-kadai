@@ -118,9 +118,9 @@ export default function SupplierLedgerTab() {
                 { key: 'date', label: 'Date' },
                 { key: 'type', label: 'Type' },
                 { key: 'reference', label: 'Reference' },
-                { key: 'credit', label: 'Credit (Billed)' },
-                { key: 'debit', label: 'Debit (Paid)' },
-                { key: 'balance', label: 'Running Balance (We Owe)' },
+                { key: 'credit', label: 'Credit (Billed)', money: true },
+                { key: 'debit', label: 'Debit (Paid)', money: true },
+                { key: 'balance', label: 'Running Balance (We Owe)', money: true },
               ]}
               rows={exportRows}
             />

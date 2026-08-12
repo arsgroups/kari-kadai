@@ -69,8 +69,8 @@ export default function InventoryValuationTab() {
             { key: 'category', label: 'Category' },
             { key: 'current_stock', label: 'Current Stock' },
             { key: 'unit', label: 'Unit' },
-            { key: 'cost_rate', label: 'Cost Rate' },
-            { key: 'value', label: 'Value' },
+            { key: 'cost_rate', label: 'Cost Rate', money: true },
+            { key: 'value', label: 'Value', money: true },
           ]}
           rows={exportRows}
         />

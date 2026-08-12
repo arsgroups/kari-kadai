@@ -222,9 +222,9 @@ export default function PurchaseInvoicesListTab() {
             { key: 'invoice_number', label: 'Invoice #' },
             { key: 'date', label: 'Date' },
             { key: 'supplier', label: 'Supplier' },
-            { key: 'subtotal', label: 'Subtotal' },
-            { key: 'gst_amount', label: 'GST' },
-            { key: 'total', label: 'Total' },
+            { key: 'subtotal', label: 'Subtotal', money: true },
+            { key: 'gst_amount', label: 'GST', money: true },
+            { key: 'total', label: 'Total', money: true },
             { key: 'payment_type', label: 'Payment' },
           ]}
           rows={exportRows}

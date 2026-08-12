@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
+import { useAuth } from '../../contexts/AuthContext'
 
 const emptyForm = {
   date: toISODate(),
@@ -14,15 +15,20 @@ const emptyForm = {
 const emptyTopup = { date: toISODate(), amount: '', remarks: '' }
 
 export default function DailyExpenseEntryTab() {
+  const { isAdmin } = useAuth()
   const [categories, setCategories] = useState([])
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState(emptyForm)
+  const [editingId, setEditingId] = useState(null)
   const [newCategory, setNewCategory] = useState({ name: '', classification: 'variable' })
   const [topup, setTopup] = useState(emptyTopup)
   const [topupSaving, setTopupSaving] = useState(false)
+  const [editingTopupId, setEditingTopupId] = useState(null)
+  const [topupSectionOpen, setTopupSectionOpen] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)
 
   async function load() {
     setLoading(true)
@@ -30,7 +36,7 @@ export default function DailyExpenseEntryTab() {
       supabase.from('expense_categories').select('id, name, classification').eq('is_active', true).order('name'),
       supabase
         .from('expenses')
-        .select('id, date, entry_type, description, amount, payment_method, remarks, expense_categories(name)')
+        .select('id, date, entry_type, category_id, description, amount, payment_method, remarks, expense_categories(name)')
         .eq('scope', 'daily')
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
@@ -51,7 +57,7 @@ export default function DailyExpenseEntryTab() {
     if (!form.category_id || !form.amount) return
     setSaving(true)
     setError('')
-    const { error } = await supabase.from('expenses').insert({
+    const payload = {
       date: form.date,
       scope: 'daily',
       entry_type: 'expense',
@@ -60,32 +66,82 @@ export default function DailyExpenseEntryTab() {
       amount: Number(form.amount),
       payment_method: form.payment_method,
       remarks: form.remarks || null,
-    })
+    }
+    const { error } = editingId
+      ? await supabase.from('expenses').update(payload).eq('id', editingId)
+      : await supabase.from('expenses').insert(payload)
     setSaving(false)
     if (error) {
       setError(error.message)
       return
     }
     setForm({ ...emptyForm, date: form.date })
+    setEditingId(null)
     load()
+  }
+
+  function startEditExpense(entry) {
+    setForm({
+      date: entry.date,
+      category_id: entry.category_id ?? '',
+      description: entry.description ?? '',
+      amount: String(entry.amount),
+      payment_method: entry.payment_method ?? 'Cash',
+      remarks: entry.remarks ?? '',
+    })
+    setEditingId(entry.id)
+    setError('')
+  }
+
+  function cancelEditExpense() {
+    setForm({ ...emptyForm, date: form.date })
+    setEditingId(null)
   }
 
   async function handleTopup(e) {
     e.preventDefault()
     if (!topup.amount) return
     setTopupSaving(true)
-    const { error } = await supabase.from('expenses').insert({
+    const payload = {
       date: topup.date,
       scope: 'daily',
       entry_type: 'topup',
       amount: Number(topup.amount),
       remarks: topup.remarks || null,
-    })
+    }
+    const { error } = editingTopupId
+      ? await supabase.from('expenses').update(payload).eq('id', editingTopupId)
+      : await supabase.from('expenses').insert(payload)
     setTopupSaving(false)
     if (!error) {
       setTopup({ ...emptyTopup, date: topup.date })
+      setEditingTopupId(null)
       load()
     }
+  }
+
+  function startEditTopup(entry) {
+    setTopup({ date: entry.date, amount: String(entry.amount), remarks: entry.remarks ?? '' })
+    setEditingTopupId(entry.id)
+    setTopupSectionOpen(true)
+  }
+
+  function cancelEditTopup() {
+    setTopup({ ...emptyTopup, date: topup.date })
+    setEditingTopupId(null)
+  }
+
+  async function handleDelete(entry) {
+    if (!window.confirm(`Delete this ${entry.entry_type === 'topup' ? 'top-up' : 'expense'} entry? This cannot be undone.`))
+      return
+    setDeletingId(entry.id)
+    const { error } = await supabase.from('expenses').delete().eq('id', entry.id)
+    setDeletingId(null)
+    if (error) {
+      setError(error.message)
+      return
+    }
+    load()
   }
 
   async function addCategory(e) {
@@ -146,9 +202,16 @@ export default function DailyExpenseEntryTab() {
             Remarks
             <input value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
           </label>
-          <button className="btn" type="submit" disabled={saving}>
-            {saving ? 'Saving…' : 'Add Expense'}
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn" type="submit" disabled={saving}>
+              {saving ? 'Saving…' : editingId ? 'Update Expense' : 'Add Expense'}
+            </button>
+            {editingId && (
+              <button type="button" className="btn-secondary" onClick={cancelEditExpense}>
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
         {error && <div className="inline-error">{error}</div>}
 
@@ -181,7 +244,11 @@ export default function DailyExpenseEntryTab() {
           </form>
         </details>
 
-        <details style={{ marginTop: '0.75rem' }}>
+        <details
+          style={{ marginTop: '0.75rem' }}
+          open={topupSectionOpen}
+          onToggle={(e) => setTopupSectionOpen(e.target.open)}
+        >
           <summary style={{ cursor: 'pointer', color: 'var(--muted)', fontSize: '0.85rem' }}>
             Record a cash top-up (for petty cash balance tracking)
           </summary>
@@ -204,9 +271,16 @@ export default function DailyExpenseEntryTab() {
               Note
               <input value={topup.remarks} onChange={(e) => setTopup({ ...topup, remarks: e.target.value })} />
             </label>
-            <button className="btn-secondary" type="submit" disabled={topupSaving}>
-              {topupSaving ? 'Saving…' : 'Add Top-up'}
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn-secondary" type="submit" disabled={topupSaving}>
+                {topupSaving ? 'Saving…' : editingTopupId ? 'Update Top-up' : 'Add Top-up'}
+              </button>
+              {editingTopupId && (
+                <button type="button" className="btn-secondary" onClick={cancelEditTopup}>
+                  Cancel
+                </button>
+              )}
+            </div>
           </form>
         </details>
       </div>
@@ -226,6 +300,7 @@ export default function DailyExpenseEntryTab() {
                 <th>Amount</th>
                 <th>Payment</th>
                 <th>Remarks</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -245,11 +320,24 @@ export default function DailyExpenseEntryTab() {
                   </td>
                   <td>{e.payment_method}</td>
                   <td>{e.remarks}</td>
+                  <td>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => (e.entry_type === 'topup' ? startEditTopup(e) : startEditExpense(e))}
+                    >
+                      Edit
+                    </button>{' '}
+                    {isAdmin && (
+                      <button className="btn-danger" disabled={deletingId === e.id} onClick={() => handleDelete(e)}>
+                        {deletingId === e.id ? 'Deleting…' : 'Delete'}
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
               {entries.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted">
+                  <td colSpan={8} className="muted">
                     No entries yet.
                   </td>
                 </tr>

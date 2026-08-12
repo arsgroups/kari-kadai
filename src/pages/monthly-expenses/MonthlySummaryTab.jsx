@@ -44,9 +44,9 @@ export default function MonthlySummaryTab() {
           filename="monthly_expense_summary"
           columns={[
             { key: 'month', label: 'Month' },
-            { key: 'fixed', label: 'Fixed' },
-            { key: 'variable', label: 'Variable' },
-            { key: 'total', label: 'Total' },
+            { key: 'fixed', label: 'Fixed', money: true },
+            { key: 'variable', label: 'Variable', money: true },
+            { key: 'total', label: 'Total', money: true },
           ]}
           rows={exportRows}
         />

@@ -82,7 +82,7 @@ export default function PnLTab() {
           filename="profit_and_loss"
           columns={[
             { key: 'line', label: 'Line' },
-            { key: 'amount', label: 'Amount (SGD)' },
+            { key: 'amount', label: 'Amount (SGD)', money: true },
           ]}
           rows={exportRows}
         />
