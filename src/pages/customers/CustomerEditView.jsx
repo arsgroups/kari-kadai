@@ -104,7 +104,12 @@ export default function CustomerEditView({ customerId, onDone }) {
                   </label>
                   <label>
                     Address
-                    <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+                    <textarea
+                      rows={3}
+                      value={form.address}
+                      onChange={(e) => setForm({ ...form, address: e.target.value })}
+                      placeholder="Unit, street, building, postal code..."
+                    />
                   </label>
                   <label>
                     Credit Limit (SGD, optional)

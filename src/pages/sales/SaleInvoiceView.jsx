@@ -57,9 +57,9 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     const showDiscount = items.some((it) => Number(it.discount) > 0)
     const doc = new jsPDF()
 
-    // Banner is 936x324px (~2.889:1) — fit it to the usable A4 width (210mm - 2*14mm margin).
+    // Banner is 1200x431px (~2.784:1) — fit it to the usable A4 width (210mm - 2*14mm margin).
     const bannerWidth = 182
-    const bannerHeight = bannerWidth / (936 / 324)
+    const bannerHeight = bannerWidth / (1200 / 431)
     const bannerDataUrl = await loadImageAsDataUrl(invoiceHeaderImg)
     doc.addImage(bannerDataUrl, 'JPEG', 14, 10, bannerWidth, bannerHeight)
 
@@ -78,10 +78,12 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     }
 
     doc.text(`Customer: ${invoice.customers?.name ?? 'Counter Sale'}`, 14, metaY + 10)
-    if (invoice.customers?.address) doc.text(invoice.customers.address, 14, metaY + 15)
+    const addressLines = invoice.customers?.address ? invoice.customers.address.split('\n').filter(Boolean) : []
+    if (addressLines.length) doc.text(addressLines, 14, metaY + 15)
+    const addressExtra = Math.max(addressLines.length - 1, 0) * 5
 
     autoTable(doc, {
-      startY: metaY + 23,
+      startY: metaY + 23 + addressExtra,
       head: [['Item', 'Qty', 'Unit', 'Price', ...(showDiscount ? ['Discount'] : []), 'GST', 'Total']],
       body: items.map((it) => [
         it.display_name || it.products?.name || '',
@@ -191,7 +193,11 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
         <div className="invoice-customer">
           <strong>Bill To:</strong> {invoice.customers?.name ?? 'Counter Sale'}
-          {invoice.customers?.address && <div className="muted">{invoice.customers.address}</div>}
+          {invoice.customers?.address && (
+            <div className="muted" style={{ whiteSpace: 'pre-line' }}>
+              {invoice.customers.address}
+            </div>
+          )}
           {invoice.customers?.contact && <div className="muted">{invoice.customers.contact}</div>}
         </div>
 
