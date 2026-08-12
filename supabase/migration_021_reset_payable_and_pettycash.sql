@@ -15,6 +15,6 @@ delete from supplier_payments;
 
 alter sequence purchase_invoice_seq restart with 1;
 
--- Petty Cash Balance (v_petty_cash_balance) sums topup/expense rows in
--- `expenses` where scope = 'daily'. Remove them so it's 0 with no history.
-delete from expenses where scope = 'daily';
+-- Petty Cash: handled by migration_024_create_expenses_table.sql instead --
+-- the `expenses` table didn't exist in this database yet, so it's created
+-- fresh and empty there rather than cleared here.
