@@ -131,11 +131,15 @@ export default function NewSaleInvoiceTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel])
 
-  // Credit is only offered for Restaurant customers — force back to Cash if
-  // the cashier switches to a channel that doesn't support it.
+  // Credit is only offered for customer-based channels (Restaurant / Home
+  // Delivery) — default to it there since most of their sales run on
+  // credit, and force back to Cash for Counter (no customer to bill).
   useEffect(() => {
-    if (channel !== 'Restaurant' && paymentType === 'Credit') {
-      setPaymentType('Cash')
+    if (channel === 'Counter') {
+      if (paymentType === 'Credit') setPaymentType('Cash')
+    } else {
+      setPaymentType('Credit')
+      setPaidAmountTouched(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel])
@@ -359,7 +363,7 @@ export default function NewSaleInvoiceTab() {
           >
             <option>Cash</option>
             <option>Bank</option>
-            {channel === 'Restaurant' && <option>Credit</option>}
+            {channel !== 'Counter' && <option>Credit</option>}
           </select>
         </label>
         {paymentType === 'Credit' && (

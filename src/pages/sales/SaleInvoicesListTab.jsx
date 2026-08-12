@@ -20,6 +20,10 @@ export default function SaleInvoicesListTab() {
   const [expandedId, setExpandedId] = useState(null)
   const [itemsByInvoice, setItemsByInvoice] = useState({})
   const [viewingInvoiceId, setViewingInvoiceId] = useState(null)
+  const [extraPaidByInvoice, setExtraPaidByInvoice] = useState({})
+  const [payingId, setPayingId] = useState(null)
+  const [paymentForm, setPaymentForm] = useState({ amount: '', payment_type: 'Cash', date: toISODate() })
+  const [payingSaving, setPayingSaving] = useState(false)
 
   useEffect(() => {
     supabase.from('customers').select('id, name').order('name').then(({ data }) => setCustomers(data ?? []))
@@ -30,7 +34,9 @@ export default function SaleInvoicesListTab() {
     setError('')
     let query = supabase
       .from('sale_invoices')
-      .select('id, invoice_number, date, channel, subtotal, gst_amount, total, paid_amount, balance, payment_type, customers(name)')
+      .select(
+        'id, invoice_number, date, channel, customer_id, subtotal, gst_amount, total, paid_amount, balance, payment_type, customers(name)'
+      )
       .gte('date', filters.from)
       .lte('date', filters.to)
       .order('date', { ascending: false })
@@ -39,8 +45,27 @@ export default function SaleInvoicesListTab() {
     if (filters.customer_id) query = query.eq('customer_id', filters.customer_id)
 
     const { data, error } = await query.limit(500)
-    if (error) setError(error.message)
-    else setRows(data ?? [])
+    if (error) {
+      setError(error.message)
+      setLoading(false)
+      return
+    }
+    setRows(data ?? [])
+
+    const invoiceIds = (data ?? []).map((r) => r.id)
+    if (invoiceIds.length) {
+      const { data: paymentRows } = await supabase
+        .from('customer_payments')
+        .select('invoice_id, amount')
+        .in('invoice_id', invoiceIds)
+      const paidMap = {}
+      ;(paymentRows ?? []).forEach((p) => {
+        paidMap[p.invoice_id] = (paidMap[p.invoice_id] ?? 0) + p.amount
+      })
+      setExtraPaidByInvoice(paidMap)
+    } else {
+      setExtraPaidByInvoice({})
+    }
     setLoading(false)
   }
 
@@ -62,6 +87,49 @@ export default function SaleInvoicesListTab() {
         .eq('sale_invoice_id', invoiceId)
       setItemsByInvoice({ ...itemsByInvoice, [invoiceId]: data ?? [] })
     }
+  }
+
+  function outstandingFor(invoice) {
+    return Math.max(invoice.balance - (extraPaidByInvoice[invoice.id] ?? 0), 0)
+  }
+
+  function paymentStatus(invoice) {
+    if (invoice.payment_type !== 'Credit') return 'Paid'
+    const outstanding = outstandingFor(invoice)
+    if (outstanding <= 0) return 'Paid'
+    if (outstanding < invoice.total) return 'Partial'
+    return 'Pending'
+  }
+
+  function openPayment(invoice) {
+    setPayingId(invoice.id)
+    setPaymentForm({ amount: String(outstandingFor(invoice)), payment_type: 'Cash', date: toISODate() })
+    setError('')
+  }
+
+  async function handleRecordPayment(invoice) {
+    const amount = Number(paymentForm.amount)
+    if (!amount || amount <= 0) {
+      setError('Enter a payment amount greater than 0.')
+      return
+    }
+    setPayingSaving(true)
+    setError('')
+    const { error: payError } = await supabase.from('customer_payments').insert({
+      customer_id: invoice.customer_id,
+      invoice_id: invoice.id,
+      date: paymentForm.date,
+      amount,
+      payment_type: paymentForm.payment_type,
+      note: `Payment for invoice ${invoice.invoice_number}`,
+    })
+    setPayingSaving(false)
+    if (payError) {
+      setError(payError.message)
+      return
+    }
+    setPayingId(null)
+    load()
   }
 
   if (viewingInvoiceId) {
@@ -168,11 +236,15 @@ export default function SaleInvoicesListTab() {
                 <th>Total</th>
                 <th>Balance</th>
                 <th>Payment</th>
+                <th>Status</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {rows.map((r) => {
+                const status = paymentStatus(r)
+                const outstanding = outstandingFor(r)
+                return (
                 <Fragment key={r.id}>
                   <tr>
                     <td>
@@ -186,8 +258,8 @@ export default function SaleInvoicesListTab() {
                     <td>{r.customers?.name ?? '—'}</td>
                     <td>{formatMoney(r.total)}</td>
                     <td>
-                      <span className={r.balance > 0 ? 'tag tag-warning' : 'tag tag-success'}>
-                        {formatMoney(r.balance)}
+                      <span className={outstanding > 0 ? 'tag tag-warning' : 'tag tag-success'}>
+                        {formatMoney(outstanding)}
                       </span>
                     </td>
                     <td>
@@ -196,15 +268,77 @@ export default function SaleInvoicesListTab() {
                       </span>
                     </td>
                     <td>
+                      <span
+                        className={
+                          status === 'Paid' ? 'tag tag-success' : status === 'Partial' ? 'tag tag-warning' : 'tag tag-danger'
+                        }
+                      >
+                        {status}
+                      </span>
+                      {r.payment_type === 'Credit' && status !== 'Paid' && (
+                        <>
+                          {' '}
+                          <button className="btn-secondary" onClick={() => openPayment(r)}>
+                            Make Payment
+                          </button>
+                        </>
+                      )}
+                    </td>
+                    <td>
                       <button className="btn-secondary" onClick={() => setViewingInvoiceId(r.id)}>
                         View / Print
                       </button>
                     </td>
                   </tr>
+                  {payingId === r.id && (
+                    <tr>
+                      <td></td>
+                      <td colSpan={9}>
+                        <div className="form-grid" style={{ alignItems: 'end' }}>
+                          <label>
+                            Amount (SGD)
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={paymentForm.amount}
+                              onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                            />
+                          </label>
+                          <label>
+                            Payment Type
+                            <select
+                              value={paymentForm.payment_type}
+                              onChange={(e) => setPaymentForm({ ...paymentForm, payment_type: e.target.value })}
+                            >
+                              <option>Cash</option>
+                              <option>Bank</option>
+                            </select>
+                          </label>
+                          <label>
+                            Date
+                            <input
+                              type="date"
+                              value={paymentForm.date}
+                              onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                            />
+                          </label>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button className="btn" disabled={payingSaving} onClick={() => handleRecordPayment(r)}>
+                              {payingSaving ? 'Saving…' : 'Record Payment'}
+                            </button>
+                            <button className="btn-secondary" onClick={() => setPayingId(null)}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {expandedId === r.id && (
                     <tr>
                       <td></td>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <table className="data-table">
                           <thead>
                             <tr>
@@ -242,10 +376,11 @@ export default function SaleInvoicesListTab() {
                     </tr>
                   )}
                 </Fragment>
-              ))}
+                )
+              })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="muted">
+                  <td colSpan={10} className="muted">
                     No sale invoices in this range.
                   </td>
                 </tr>

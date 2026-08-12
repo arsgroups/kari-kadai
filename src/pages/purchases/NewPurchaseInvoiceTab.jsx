@@ -23,7 +23,7 @@ export default function NewPurchaseInvoiceTab() {
   const [supplierId, setSupplierId] = useState('')
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [date, setDate] = useState(toISODate())
-  const [paymentType, setPaymentType] = useState('Cash')
+  const [paymentType, setPaymentType] = useState('Credit')
   const [note, setNote] = useState('')
   const [lines, setLines] = useState([emptyLine()])
   const [saving, setSaving] = useState(false)
