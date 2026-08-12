@@ -380,7 +380,8 @@ export default function ProductsTab() {
                 />
                 <strong>Supplier item</strong>
                 <span className="muted" style={{ fontSize: '0.8rem' }}>
-                  — always shows in Purchase Invoice; use Channel Availability below to control Sales visibility
+                  — tick this to make the item selectable on a Purchase Invoice; use Channel Availability below to
+                  control Sales visibility separately
                 </span>
               </label>
               <h4 style={{ marginBottom: '0.2rem' }}>Channel Availability</h4>

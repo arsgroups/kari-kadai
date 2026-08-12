@@ -51,6 +51,7 @@ export default function NewPurchaseInvoiceTab() {
       .from('products')
       .select('id, name, purchase_unit, default_purchase_price')
       .eq('is_active', true)
+      .eq('supplier_only', true)
       .order('name')
       .then(({ data }) => setProducts(data ?? []))
     fetchRateHistory().then((rates) => setGetRate(() => buildRateResolver(rates)))
