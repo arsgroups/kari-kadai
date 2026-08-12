@@ -9,7 +9,7 @@ function firstOfMonth() {
   return toISODate(new Date(d.getFullYear(), d.getMonth(), 1))
 }
 
-const emptyFilters = { from: firstOfMonth(), to: toISODate(), supplier_id: '', source: '' }
+const emptyFilters = { from: firstOfMonth(), to: toISODate(), supplier_id: '' }
 
 export default function PurchaseInvoicesListTab() {
   const { isAdmin } = useAuth()
@@ -35,13 +35,12 @@ export default function PurchaseInvoicesListTab() {
     setError('')
     let query = supabase
       .from('purchase_invoices')
-      .select('id, invoice_number, date, supplier_id, subtotal, gst_amount, total, payment_type, source, note, suppliers(name)')
+      .select('id, invoice_number, date, supplier_id, subtotal, gst_amount, total, payment_type, note, suppliers(name)')
       .gte('date', filters.from)
       .lte('date', filters.to)
       .order('date', { ascending: false })
 
     if (filters.supplier_id) query = query.eq('supplier_id', filters.supplier_id)
-    if (filters.source) query = query.eq('source', filters.source)
 
     const { data, error } = await query.limit(500)
     if (error) {
@@ -183,7 +182,6 @@ export default function PurchaseInvoicesListTab() {
     gst_amount: r.gst_amount,
     total: r.total,
     payment_type: r.payment_type,
-    source: r.source,
   }))
 
   return (
@@ -209,14 +207,6 @@ export default function PurchaseInvoicesListTab() {
               ))}
             </select>
           </label>
-          <label>
-            Source
-            <select value={filters.source} onChange={(e) => setFilters({ ...filters, source: e.target.value })}>
-              <option value="">All</option>
-              <option value="manual">Manually entered</option>
-              <option value="imported">Imported from accounting app</option>
-            </select>
-          </label>
         </div>
       </div>
 
@@ -236,7 +226,6 @@ export default function PurchaseInvoicesListTab() {
             { key: 'gst_amount', label: 'GST' },
             { key: 'total', label: 'Total' },
             { key: 'payment_type', label: 'Payment' },
-            { key: 'source', label: 'Source' },
           ]}
           rows={exportRows}
         />
@@ -260,7 +249,6 @@ export default function PurchaseInvoicesListTab() {
                 <th>Total</th>
                 <th>Payment</th>
                 <th>Status</th>
-                <th>Source</th>
                 <th></th>
               </tr>
             </thead>
@@ -310,18 +298,13 @@ export default function PurchaseInvoicesListTab() {
                         </>
                       )}
                     </td>
-                    <td>
-                      <span className={r.source === 'imported' ? 'tag tag-muted' : 'tag tag-success'}>
-                        {r.source === 'imported' ? 'Imported' : 'Manual'}
-                      </span>
-                    </td>
                     <td></td>
                   </tr>
                   {payingId === r.id && (
                     <tr>
                       <td></td>
                       <td></td>
-                      <td colSpan={10}>
+                      <td colSpan={9}>
                         <div className="form-grid" style={{ alignItems: 'end' }}>
                           <label>
                             Amount (SGD)
@@ -367,7 +350,7 @@ export default function PurchaseInvoicesListTab() {
                     <tr>
                       <td></td>
                       <td></td>
-                      <td colSpan={10}>
+                      <td colSpan={9}>
                         <table className="data-table">
                           <thead>
                             <tr>
@@ -409,7 +392,7 @@ export default function PurchaseInvoicesListTab() {
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="muted">
+                  <td colSpan={11} className="muted">
                     No purchase invoices in this range.
                   </td>
                 </tr>
