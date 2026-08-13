@@ -14,6 +14,7 @@ function emptyLine() {
     rate: '',
     discount: 0,
     gst_applicable: true,
+    promoFreeFor: null,
   }
 }
 
@@ -23,6 +24,7 @@ export default function NewSaleInvoiceTab() {
   const [channelConfig, setChannelConfig] = useState({}) // product_id -> { [channel]: { display_name, is_visible } }
   const [getRate, setGetRate] = useState(() => () => 9)
   const [customerPrices, setCustomerPrices] = useState({}) // product_id -> price
+  const [promotions, setPromotions] = useState([])
 
   const [channel, setChannel] = useState('Counter')
   const [customerId, setCustomerId] = useState('')
@@ -59,7 +61,9 @@ export default function NewSaleInvoiceTab() {
         .eq('is_active', true)
         .eq('yield_configurations.is_active', true),
       supabase.from('product_channel_config').select('product_id, channel, display_name, is_visible'),
-    ]).then(([{ data: productData }, { data: stockData }, { data: yieldData }, { data: channelData }]) => {
+      supabase.from('promotions').select('*').eq('is_active', true),
+    ]).then(([{ data: productData }, { data: stockData }, { data: yieldData }, { data: channelData }, { data: promoData }]) => {
+      setPromotions(promoData ?? [])
       const channelMap = {}
       ;(channelData ?? []).forEach((row) => {
         if (!channelMap[row.product_id]) channelMap[row.product_id] = {}
@@ -179,8 +183,80 @@ export default function NewSaleInvoiceTab() {
     [products, channelConfig, channel]
   )
 
+  function activePromo(productId, promoType, forDate) {
+    return promotions.find(
+      (p) =>
+        p.product_id === productId &&
+        p.promo_type === promoType &&
+        p.is_active &&
+        forDate >= p.start_date &&
+        forDate <= p.end_date
+    )
+  }
+
+  // Recomputes discount-promo amounts and keeps each Buy-X-Get-Y line's
+  // auto-added $0 "free" companion row in sync with its paid line's
+  // quantity — adding, updating, or removing that row as needed.
+  function applyPromotions(inputLines, forDate) {
+    let result = inputLines.map((l) => ({ ...l }))
+
+    result = result.map((l) => {
+      if (l.promoFreeFor || !l.product_id) return l
+      const promo = activePromo(l.product_id, 'discount', forDate)
+      if (!promo) return l
+      const qty = Number(l.quantity) || 0
+      const rateVal = Number(l.rate) || 0
+      const discount =
+        promo.discount_type === 'percent'
+          ? round2(qty * rateVal * (promo.discount_value / 100))
+          : round2(qty * promo.discount_value)
+      return { ...l, discount }
+    })
+
+    const paidLines = result.filter((l) => !l.promoFreeFor)
+    for (const line of paidLines) {
+      const promo = activePromo(line.product_id, 'buy_x_get_y', forDate)
+      const existingIdx = result.findIndex((l) => l.promoFreeFor === line.key)
+      const freeQty = promo ? Math.floor((Number(line.quantity) || 0) / promo.buy_qty) * promo.free_qty : 0
+
+      if (!promo || freeQty <= 0) {
+        if (existingIdx !== -1) result.splice(existingIdx, 1)
+        continue
+      }
+
+      const product = products.find((p) => p.id === line.product_id)
+      const freeLineData = {
+        product_id: line.product_id,
+        quantity: freeQty,
+        unit: product?.sales_unit ?? '',
+        rate: 0,
+        discount: 0,
+        gst_applicable: false,
+        promoFreeFor: line.key,
+      }
+      if (existingIdx !== -1) {
+        result[existingIdx] = { ...result[existingIdx], ...freeLineData }
+      } else {
+        const insertAt = result.findIndex((l) => l.key === line.key) + 1
+        result.splice(insertAt, 0, { key: crypto.randomUUID(), ...freeLineData })
+      }
+    }
+
+    return result
+  }
+
+  // Re-sync promotions whenever the invoice date changes, since a promo's
+  // active period is checked against this date.
+  useEffect(() => {
+    setLines((prev) => applyPromotions(prev, date))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, promotions])
+
   function updateLine(key, patch) {
-    setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)))
+    setLines((prev) => {
+      const next = prev.map((l) => (l.key === key ? { ...l, ...patch } : l))
+      return 'quantity' in patch || 'product_id' in patch ? applyPromotions(next, date) : next
+    })
   }
 
   function handleProductChange(key, productId) {
@@ -200,7 +276,7 @@ export default function NewSaleInvoiceTab() {
   }
 
   function removeLine(key) {
-    setLines(lines.filter((l) => l.key !== key))
+    setLines(lines.filter((l) => l.key !== key && l.promoFreeFor !== key))
   }
 
   function lineAmount(line) {
@@ -261,17 +337,20 @@ export default function NewSaleInvoiceTab() {
       return
     }
 
-    const itemRows = validLines.map((l) => ({
-      sale_invoice_id: invoice.id,
-      product_id: l.product_id,
-      quantity: Number(l.quantity),
-      unit: l.unit || null,
-      rate: Number(l.rate) || 0,
-      discount: Number(l.discount) || 0,
-      gst_applicable: l.gst_applicable,
-      gst_amount: lineGst(l),
-      display_name: channelProducts.find((p) => p.id === l.product_id)?.channelName || null,
-    }))
+    const itemRows = validLines.map((l) => {
+      const baseName = channelProducts.find((p) => p.id === l.product_id)?.channelName || null
+      return {
+        sale_invoice_id: invoice.id,
+        product_id: l.product_id,
+        quantity: Number(l.quantity),
+        unit: l.unit || null,
+        rate: Number(l.rate) || 0,
+        discount: Number(l.discount) || 0,
+        gst_applicable: l.gst_applicable,
+        gst_amount: lineGst(l),
+        display_name: l.promoFreeFor ? `${baseName || 'Item'} (Free)` : baseName,
+      }
+    })
 
     const { error: itemsError } = await supabase.from('sale_invoice_items').insert(itemRows)
 
@@ -403,18 +482,28 @@ export default function NewSaleInvoiceTab() {
           </tr>
         </thead>
         <tbody>
-          {lines.map((line) => (
-            <tr key={line.key}>
+          {lines.map((line) => {
+            const isFreeLine = Boolean(line.promoFreeFor)
+            const hasDiscountPromo = !isFreeLine && line.product_id && activePromo(line.product_id, 'discount', date)
+            return (
+            <tr key={line.key} style={isFreeLine ? { background: 'var(--bg)' } : undefined}>
               <td>
-                <select value={line.product_id} onChange={(e) => handleProductChange(line.key, e.target.value)}>
-                  <option value="">Select item…</option>
-                  {channelProducts.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.channelName}
-                      {p.cutFrom ? ` (from ${p.cutFrom})` : ''}
-                    </option>
-                  ))}
-                </select>
+                {isFreeLine ? (
+                  <span>
+                    {channelProducts.find((p) => p.id === line.product_id)?.channelName || 'Item'}{' '}
+                    <span className="tag tag-success">FREE — Promo</span>
+                  </span>
+                ) : (
+                  <select value={line.product_id} onChange={(e) => handleProductChange(line.key, e.target.value)}>
+                    <option value="">Select item…</option>
+                    {channelProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.channelName}
+                        {p.cutFrom ? ` (from ${p.cutFrom})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </td>
               <td>
                 <input
@@ -423,6 +512,7 @@ export default function NewSaleInvoiceTab() {
                   min="0"
                   style={{ width: 80 }}
                   value={line.quantity}
+                  disabled={isFreeLine}
                   onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
                 />
               </td>
@@ -446,16 +536,23 @@ export default function NewSaleInvoiceTab() {
                   min="0"
                   style={{ width: 90 }}
                   value={line.rate}
+                  disabled={isFreeLine}
                   onChange={(e) => updateLine(line.key, { rate: e.target.value })}
                 />
               </td>
               <td>
+                {hasDiscountPromo && (
+                  <div className="muted" style={{ fontSize: '0.7rem' }}>
+                    Promo
+                  </div>
+                )}
                 <input
                   type="number"
                   step="0.01"
                   min="0"
                   style={{ width: 80 }}
                   value={line.discount}
+                  disabled={isFreeLine}
                   onChange={(e) => updateLine(line.key, { discount: e.target.value })}
                 />
               </td>
@@ -463,6 +560,7 @@ export default function NewSaleInvoiceTab() {
                 <input
                   type="checkbox"
                   checked={line.gst_applicable}
+                  disabled={isFreeLine}
                   onChange={(e) => updateLine(line.key, { gst_applicable: e.target.checked })}
                 />
               </td>
@@ -474,7 +572,8 @@ export default function NewSaleInvoiceTab() {
                 </button>
               </td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
       <button type="button" className="btn-secondary" style={{ marginTop: '0.75rem' }} onClick={addLine}>

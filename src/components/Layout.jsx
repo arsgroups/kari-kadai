@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { to: '/inventory', label: 'Inventory' },
   { to: '/sales', label: 'Sales' },
   { to: '/purchases', label: 'Purchases' },
+  { to: '/promotions', label: 'Promotions', adminOnly: true },
   { to: '/customers', label: 'Customers & Credit' },
   { to: '/suppliers', label: 'Suppliers' },
   { to: '/expenses/daily', label: 'Daily Expenses' },

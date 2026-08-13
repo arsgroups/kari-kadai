@@ -17,6 +17,7 @@ import Gst from './pages/Gst'
 import Reports from './pages/Reports'
 import Import from './pages/Import'
 import Settings from './pages/Settings'
+import Promotions from './pages/Promotions'
 
 export default function App() {
   return (
@@ -67,6 +68,14 @@ export default function App() {
               }
             />
             <Route path="import" element={<Import />} />
+            <Route
+              path="promotions"
+              element={
+                <AdminRoute>
+                  <Promotions />
+                </AdminRoute>
+              }
+            />
             <Route
               path="settings"
               element={
