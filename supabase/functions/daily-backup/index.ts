@@ -15,7 +15,8 @@
 //
 // Required secrets (set via `supabase secrets set …`, never committed):
 //   BACKUP_TRIGGER_SECRET     — matches the 'backup_trigger_secret' Vault entry in Postgres
-//   GOOGLE_OAUTH_CLIENT_ID     — from a Google Cloud OAuth client (Desktop app type)
+//   GOOGLE_OAUTH_CLIENT_ID     — from a Google Cloud OAuth client (Web application type —
+//                                the OAuth Playground below requires this, not Desktop)
 //   GOOGLE_OAUTH_CLIENT_SECRET — from the same OAuth client
 //   GOOGLE_OAUTH_REFRESH_TOKEN — obtained once via Google's OAuth Playground, authorizing
 //                                your own Drive account (no service account needed —
