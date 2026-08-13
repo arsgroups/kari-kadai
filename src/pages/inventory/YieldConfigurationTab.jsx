@@ -79,6 +79,17 @@ export default function YieldConfigurationTab() {
       setError('A child item cannot be the same as the parent item.')
       return
     }
+    const seen = new Set()
+    const duplicate = validChildren.find((r) => {
+      if (seen.has(r.child_product_id)) return true
+      seen.add(r.child_product_id)
+      return false
+    })
+    if (duplicate) {
+      const name = products.find((p) => p.id === duplicate.child_product_id)?.name ?? 'that item'
+      setError(`${name} is selected more than once — each sale item can only be added once per configuration.`)
+      return
+    }
     setSaving(true)
 
     let configId = editingId !== 'new' ? editingId : null
@@ -109,7 +120,11 @@ export default function YieldConfigurationTab() {
 
     setSaving(false)
     if (itemsErr) {
-      setError(itemsErr.message)
+      setError(
+        itemsErr.code === '23505'
+          ? 'One of these sale items is already configured under a different parent — each sale item can only belong to one parent.'
+          : itemsErr.message
+      )
       return
     }
     setEditingId(null)
@@ -169,7 +184,12 @@ export default function YieldConfigurationTab() {
                     >
                       <option value="">Select item…</option>
                       {products
-                        .filter((p) => p.id !== parentId)
+                        .filter(
+                          (p) =>
+                            p.id !== parentId &&
+                            (p.id === row.child_product_id ||
+                              !childRows.some((r) => r.child_product_id === p.id))
+                        )
                         .map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.name}
