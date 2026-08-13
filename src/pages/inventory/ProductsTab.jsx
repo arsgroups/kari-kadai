@@ -40,6 +40,10 @@ export default function ProductsTab() {
   const [showForm, setShowForm] = useState(false)
   const [lowStockOnly, setLowStockOnly] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [channelFilters, setChannelFilters] = useState([])
+  const [supplierFilter, setSupplierFilter] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -215,10 +219,27 @@ export default function ProductsTab() {
     load()
   }
 
+  function toggleChannelFilter(ch) {
+    setChannelFilters((prev) => (prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]))
+  }
+
+  function clearAdvancedFilters() {
+    setChannelFilters([])
+    setSupplierFilter(false)
+  }
+
   const categories = [...new Set(rows.map((r) => r.category).filter(Boolean))]
-  const visibleRows = lowStockOnly
-    ? rows.filter((r) => !r.cutFrom && r.current_stock <= r.low_stock_threshold)
-    : rows
+  const searchTerm = searchQuery.trim().toLowerCase()
+  const visibleRows = rows.filter((r) => {
+    if (lowStockOnly && (r.cutFrom || r.current_stock > r.low_stock_threshold)) return false
+    if (searchTerm) {
+      const matches = r.name?.toLowerCase().includes(searchTerm) || r.item_code?.toLowerCase().includes(searchTerm)
+      if (!matches) return false
+    }
+    if (channelFilters.length > 0 && !channelFilters.some((ch) => !r.hiddenChannels.includes(ch))) return false
+    if (supplierFilter && !r.supplier_only) return false
+    return true
+  })
 
   return (
     <div>
@@ -226,13 +247,53 @@ export default function ProductsTab() {
         <button className="btn" onClick={startNew}>
           + Add Item
         </button>
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by name or item code…"
+          style={{ minWidth: 220 }}
+        />
         <button
           className={lowStockOnly ? 'btn' : 'btn-secondary'}
           onClick={() => setLowStockOnly((v) => !v)}
         >
           {lowStockOnly ? 'Showing: Low stock only' : 'Show low stock only'}
         </button>
+        <button
+          className={showAdvanced ? 'btn' : 'btn-secondary'}
+          onClick={() => setShowAdvanced((v) => !v)}
+        >
+          Advanced Search{channelFilters.length > 0 || supplierFilter ? ' (active)' : ''}
+        </button>
       </div>
+
+      {showAdvanced && (
+        <div className="card">
+          <h3 style={{ marginBottom: '0.5rem' }}>Advanced Search</h3>
+          <p className="muted" style={{ fontSize: '0.8rem', marginTop: 0 }}>
+            Tick one or more channels to show items visible in any of them; tick Supplier item to also require that
+            flag.
+          </p>
+          <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            {CHANNELS.map((ch) => (
+              <label key={ch} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <input type="checkbox" checked={channelFilters.includes(ch)} onChange={() => toggleChannelFilter(ch)} />
+                {ch}
+              </label>
+            ))}
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <input type="checkbox" checked={supplierFilter} onChange={(e) => setSupplierFilter(e.target.checked)} />
+              Supplier item
+            </label>
+            {(channelFilters.length > 0 || supplierFilter) && (
+              <button className="btn-secondary" onClick={clearAdvancedFilters}>
+                Clear Filters
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="card">
