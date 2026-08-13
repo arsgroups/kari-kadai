@@ -52,7 +52,21 @@ const BACKUP_TABLES = [
   'daily_closing',
 ]
 
+// Browsers send a CORS preflight (OPTIONS) before a cross-origin POST like
+// the app's Test Connection / Run Backup Now buttons make. Without these
+// headers the preflight is rejected and the real request never goes out —
+// surfacing in supabase-js as "Failed to send a request to the Edge
+// Function" rather than any response from this function at all.
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS })
+  }
   if (req.method !== 'POST') {
     return json({ error: 'Method not allowed' }, 405)
   }
@@ -115,7 +129,10 @@ Deno.serve(async (req) => {
 })
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+  })
 }
 
 async function isAuthorized(req: Request, admin: ReturnType<typeof createClient>) {
