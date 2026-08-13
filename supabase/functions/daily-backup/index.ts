@@ -1,7 +1,9 @@
 // Supabase Edge Function: daily-backup
 //
-// Generates a SQL-format data dump + a set of Excel files covering the
-// business's data, uploads them to Google Drive under
+// Generates a SQL-format data dump, a set of Excel files covering the
+// business's full history, and a set of day-scoped CSV reports (inventory
+// snapshot, today's sale/purchase invoices, credit outstanding, and a
+// month-to-date sales summary), uploads them all to Google Drive under
 // ERP Backup/YYYY/MM/YYYY-MM-DD/, and logs the outcome to backup_logs.
 //
 // Invoked either:
@@ -92,6 +94,7 @@ Deno.serve(async (req) => {
   try {
     const tableData = await fetchAllTables(admin)
     const files = buildBackupFiles(date, tableData)
+    files.push(...(await buildDailyReportFiles(admin, date)))
 
     const accessToken = await getGoogleAccessToken()
     const dateFolderId = await ensureDateFolderPath(accessToken, settings.drive_folder_id, date)
@@ -200,6 +203,97 @@ function buildBackupFiles(date: string, t: Record<string, Record<string, unknown
   }
 
   return files
+}
+
+// ---------------------------------------------------------------------------
+// Day-scoped CSV reports (Inventory snapshot, today's Sales/Purchases,
+// Credit outstanding, Month-to-date Sales) — distinct from the full
+// historical table dump above, these are the human-readable reports
+// requested to accompany every Daily Closing.
+// ---------------------------------------------------------------------------
+
+function csvEscape(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  const s = String(value)
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+function toCsv(rows: Record<string, unknown>[], columns?: string[]): string {
+  if (rows.length === 0) return ''
+  const cols = columns ?? Object.keys(rows[0])
+  const lines = [cols.join(',')]
+  for (const row of rows) {
+    lines.push(cols.map((c) => csvEscape(row[c])).join(','))
+  }
+  return lines.join('\n')
+}
+
+function csvFile(name: string, rows: Record<string, unknown>[], columns?: string[]) {
+  return { name, content: new TextEncoder().encode(toCsv(rows, columns)), mimeType: 'text/csv' }
+}
+
+async function buildDailyReportFiles(admin: ReturnType<typeof createClient>, date: string) {
+  const monthStart = `${date.slice(0, 7)}-01`
+
+  const [inventoryRes, salesRes, purchasesRes, outstandingRes, monthSalesRes] = await Promise.all([
+    admin
+      .from('v_current_stock')
+      .select('item_code, name, category, unit, current_stock, low_stock_threshold')
+      .eq('is_active', true)
+      .order('name'),
+    admin
+      .from('sale_invoices')
+      .select('invoice_number, date, channel, payment_type, subtotal, gst_amount, total, paid_amount, balance, customers(name)')
+      .eq('date', date)
+      .order('invoice_number'),
+    admin
+      .from('purchase_invoices')
+      .select('invoice_number, date, payment_type, subtotal, gst_amount, total, suppliers(name)')
+      .eq('date', date)
+      .order('invoice_number'),
+    admin.from('v_customer_outstanding').select('name, type, credit_limit, outstanding').order('name'),
+    admin.from('sale_invoices').select('date, total').gte('date', monthStart).lte('date', date),
+  ])
+
+  const salesRows = (salesRes.data ?? []).map((r: Record<string, unknown>) => ({
+    invoice_number: r.invoice_number,
+    date: r.date,
+    channel: r.channel,
+    customer: (r.customers as { name?: string } | null)?.name ?? '',
+    payment_type: r.payment_type,
+    subtotal: r.subtotal,
+    gst_amount: r.gst_amount,
+    total: r.total,
+    paid_amount: r.paid_amount,
+    balance: r.balance,
+  }))
+
+  const purchaseRows = (purchasesRes.data ?? []).map((r: Record<string, unknown>) => ({
+    invoice_number: r.invoice_number,
+    date: r.date,
+    supplier: (r.suppliers as { name?: string } | null)?.name ?? '',
+    payment_type: r.payment_type,
+    subtotal: r.subtotal,
+    gst_amount: r.gst_amount,
+    total: r.total,
+  }))
+
+  const byDay = new Map<string, { date: string; invoice_count: number; total_sales: number }>()
+  for (const row of monthSalesRes.data ?? []) {
+    const entry = byDay.get(row.date) ?? { date: row.date, invoice_count: 0, total_sales: 0 }
+    entry.invoice_count += 1
+    entry.total_sales += row.total
+    byDay.set(row.date, entry)
+  }
+  const monthSalesRows = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date))
+
+  return [
+    csvFile('inventory_snapshot.csv', inventoryRes.data ?? []),
+    csvFile('sales_invoices_today.csv', salesRows),
+    csvFile('purchase_invoices_today.csv', purchaseRows),
+    csvFile('credit_outstanding.csv', outstandingRes.data ?? []),
+    csvFile('monthly_sales_summary.csv', monthSalesRows),
+  ]
 }
 
 // ---------------------------------------------------------------------------
