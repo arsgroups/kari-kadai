@@ -16,8 +16,8 @@ const NAV_ITEMS = [
   { to: '/closing', label: 'Daily Closing' },
   { to: '/gst', label: 'GST', adminOnly: true },
   { to: '/reports', label: 'Reports', adminOnly: true },
-  { to: '/import', label: 'Import from Accounting App' },
   { to: '/settings', label: 'Settings', adminOnly: true },
+  { to: '/audit-log', label: 'Audit Log', adminOnly: true },
 ]
 
 export default function Layout() {

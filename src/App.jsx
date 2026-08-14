@@ -15,9 +15,9 @@ import MonthlyExpenses from './pages/MonthlyExpenses'
 import Closing from './pages/Closing'
 import Gst from './pages/Gst'
 import Reports from './pages/Reports'
-import Import from './pages/Import'
 import Settings from './pages/Settings'
 import Promotions from './pages/Promotions'
+import AuditLog from './pages/AuditLog'
 
 export default function App() {
   return (
@@ -67,7 +67,6 @@ export default function App() {
                 </AdminRoute>
               }
             />
-            <Route path="import" element={<Import />} />
             <Route
               path="promotions"
               element={
@@ -81,6 +80,14 @@ export default function App() {
               element={
                 <AdminRoute>
                   <Settings />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="audit-log"
+              element={
+                <AdminRoute>
+                  <AuditLog />
                 </AdminRoute>
               }
             />

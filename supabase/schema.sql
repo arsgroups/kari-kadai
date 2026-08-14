@@ -223,24 +223,6 @@ create table if not exists suppliers (
   created_at timestamptz not null default now()
 );
 
-create table if not exists csv_import_mappings (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  source_type text not null check (source_type in ('purchases','payables')),
-  column_mapping jsonb not null,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists import_batches (
-  id uuid primary key default gen_random_uuid(),
-  date date not null default current_date,
-  source_type text not null,
-  file_name text,
-  row_count integer,
-  mapping_id uuid references csv_import_mappings(id),
-  created_at timestamptz not null default now()
-);
-
 create sequence if not exists purchase_invoice_seq start 1;
 
 create table if not exists purchase_invoices (
@@ -253,7 +235,6 @@ create table if not exists purchase_invoices (
   gst_amount numeric not null default 0,
   total numeric generated always as (subtotal + gst_amount) stored,
   source text not null default 'manual' check (source in ('manual','imported')),
-  import_batch_id uuid references import_batches(id),
   note text,
   created_at timestamptz not null default now()
 );
@@ -319,15 +300,6 @@ create table if not exists supplier_payments (
   date date not null default current_date,
   amount numeric not null,
   payment_type text not null check (payment_type in ('Cash','Bank')),
-  note text,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists manual_accounting_totals (
-  id uuid primary key default gen_random_uuid(),
-  date date not null,
-  period_type text not null check (period_type in ('day','week')),
-  total_purchases_amount numeric not null,
   note text,
   created_at timestamptz not null default now()
 );
@@ -662,9 +634,9 @@ begin
       'products','stock_movements','stock_verifications','customers',
       'sale_invoices','sale_invoice_items',
       'customer_payments','suppliers','purchase_invoices','purchase_invoice_items','supplier_payments',
-      'manual_accounting_totals','expenses',
+      'expenses',
       'expense_categories','daily_closing','gst_rate_history',
-      'gst_returns','csv_import_mappings','import_batches','customer_item_prices',
+      'gst_returns','customer_item_prices',
       'yield_configurations','yield_configuration_items','product_channel_config','promotions'
     ])
   loop
@@ -725,6 +697,83 @@ from auth.users u
 where is_admin();
 
 grant select on admin_user_directory to authenticated;
+
+-- ============================================================================
+-- AUDIT LOG — simple, lightweight: who did what, no diffing/JSON payloads.
+-- ============================================================================
+
+create table if not exists audit_log (
+  id uuid primary key default gen_random_uuid(),
+  user_email text,
+  action text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_audit_log_created_at on audit_log(created_at desc);
+
+alter table audit_log enable row level security;
+drop policy if exists "authenticated_full_access" on audit_log;
+create policy "authenticated_full_access" on audit_log for all to authenticated using (true) with check (true);
+
+create or replace function log_audit_event() returns trigger as $$
+declare
+  actor text;
+  row_data jsonb;
+  ref text;
+begin
+  actor := coalesce(auth.jwt() ->> 'email', auth.uid()::text, 'system');
+  row_data := to_jsonb(coalesce(new, old));
+  ref := coalesce(row_data->>'invoice_number', row_data->>'name', row_data->>'date');
+
+  insert into audit_log (user_email, action)
+  values (
+    actor,
+    TG_ARGV[0] || ' ' || lower(TG_OP) || case when ref is not null then ' — ' || ref else '' end
+  );
+
+  return coalesce(new, old);
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists audit_sale_invoices on sale_invoices;
+create trigger audit_sale_invoices after insert or delete on sale_invoices
+  for each row execute function log_audit_event('Sale Invoice');
+
+drop trigger if exists audit_purchase_invoices on purchase_invoices;
+create trigger audit_purchase_invoices after insert or delete on purchase_invoices
+  for each row execute function log_audit_event('Purchase Invoice');
+
+drop trigger if exists audit_customer_payments on customer_payments;
+create trigger audit_customer_payments after insert on customer_payments
+  for each row execute function log_audit_event('Customer Payment');
+
+drop trigger if exists audit_supplier_payments on supplier_payments;
+create trigger audit_supplier_payments after insert on supplier_payments
+  for each row execute function log_audit_event('Supplier Payment');
+
+drop trigger if exists audit_products on products;
+create trigger audit_products after insert or delete on products
+  for each row execute function log_audit_event('Item');
+
+drop trigger if exists audit_customers on customers;
+create trigger audit_customers after insert or delete on customers
+  for each row execute function log_audit_event('Customer');
+
+drop trigger if exists audit_suppliers on suppliers;
+create trigger audit_suppliers after insert or delete on suppliers
+  for each row execute function log_audit_event('Supplier');
+
+drop trigger if exists audit_promotions on promotions;
+create trigger audit_promotions after insert or update or delete on promotions
+  for each row execute function log_audit_event('Promotion');
+
+drop trigger if exists audit_user_roles on user_roles;
+create trigger audit_user_roles after insert or update on user_roles
+  for each row execute function log_audit_event('User Role');
+
+drop trigger if exists audit_daily_closing on daily_closing;
+create trigger audit_daily_closing after insert or update on daily_closing
+  for each row execute function log_audit_event('Daily Closing');
 
 -- ============================================================================
 -- SEED DATA

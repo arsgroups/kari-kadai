@@ -171,6 +171,14 @@ export default function NewSaleInvoiceTab() {
   const requiresCustomer = channel !== 'Counter'
   const filteredCustomers = useMemo(() => customers.filter((c) => c.type === channel), [customers, channel])
   const rate = getRate(date)
+  // Counter and Home Delivery quote GST-inclusive prices — the Price field
+  // shows/accepts the inclusive figure and nothing is added on top of it,
+  // while GST is still broken out below for accounting. Restaurant is
+  // unchanged: Price is GST-exclusive and GST is added on top. The stored
+  // line rate always stays GST-exclusive internally so every report that
+  // reads subtotal/amount (P&L, GST return, ledgers, ...) keeps working —
+  // only the entry/display conversion differs by channel.
+  const gstInclusiveEntry = channel !== 'Restaurant'
 
   // Products actually offered on the currently selected channel, with any
   // per-channel display name applied (e.g. "Mutton" here, "Fresh Goat/Lamb"
@@ -473,7 +481,7 @@ export default function NewSaleInvoiceTab() {
             <th>Qty</th>
             <th>Unit</th>
             <th>Available</th>
-            <th>Price</th>
+            <th>Price{gstInclusiveEntry ? ' (incl. GST)' : ''}</th>
             <th>Discount</th>
             <th>GST?</th>
             <th>GST Amt</th>
@@ -535,9 +543,18 @@ export default function NewSaleInvoiceTab() {
                   step="0.01"
                   min="0"
                   style={{ width: 90 }}
-                  value={line.rate}
+                  value={
+                    !isFreeLine && gstInclusiveEntry && line.rate !== ''
+                      ? round2(Number(line.rate) * (1 + rate / 100))
+                      : line.rate
+                  }
                   disabled={isFreeLine}
-                  onChange={(e) => updateLine(line.key, { rate: e.target.value })}
+                  onChange={(e) => {
+                    const typed = e.target.value
+                    const newRate =
+                      gstInclusiveEntry && typed !== '' ? round2(Number(typed) / (1 + rate / 100)) : typed
+                    updateLine(line.key, { rate: newRate })
+                  }}
                 />
               </td>
               <td>
@@ -588,7 +605,7 @@ export default function NewSaleInvoiceTab() {
               <td>{formatMoney(subtotal)}</td>
             </tr>
             <tr>
-              <td>GST ({rate}%)</td>
+              <td>GST ({rate}%){gstInclusiveEntry ? ' — included in price' : ''}</td>
               <td>{formatMoney(gstTotal)}</td>
             </tr>
             <tr style={{ fontWeight: 700 }}>
