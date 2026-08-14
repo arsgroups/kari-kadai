@@ -3,6 +3,7 @@
 -- Run this in Supabase SQL Editor.
 
 alter table purchase_invoices drop column if exists import_batch_id;
+alter table if exists purchases_legacy drop column if exists import_batch_id;
 
 drop table if exists import_batches;
 drop table if exists csv_import_mappings;
