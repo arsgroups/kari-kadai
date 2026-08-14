@@ -4,6 +4,6 @@
 
 alter table purchase_invoices drop column if exists import_batch_id;
 
-drop table if exists csv_import_mappings;
 drop table if exists import_batches;
+drop table if exists csv_import_mappings;
 drop table if exists manual_accounting_totals;
