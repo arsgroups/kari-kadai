@@ -15,6 +15,7 @@ export default function NewQuotationTab() {
   const [date, setDate] = useState(toISODate())
   const [customerName, setCustomerName] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
+  const [customerContact, setCustomerContact] = useState('')
   const [sentByName, setSentByName] = useState('')
   const [sentByContact, setSentByContact] = useState('')
   const [lines, setLines] = useState([emptyLine()])
@@ -91,6 +92,7 @@ export default function NewQuotationTab() {
         channel,
         customer_name: customerName,
         customer_address: customerAddress || null,
+        customer_contact: customerContact || null,
         sent_by_name: sentByName || null,
         sent_by_contact: sentByContact || null,
       })
@@ -130,6 +132,7 @@ export default function NewQuotationTab() {
     setSavedQuotationId(null)
     setCustomerName('')
     setCustomerAddress('')
+    setCustomerContact('')
     setSentByName('')
     setSentByContact('')
     setLines([emptyLine()])
@@ -178,6 +181,10 @@ export default function NewQuotationTab() {
         <label>
           Customer Address
           <textarea rows={2} value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
+        </label>
+        <label>
+          Customer Contact
+          <input value={customerContact} onChange={(e) => setCustomerContact(e.target.value)} />
         </label>
         <label>
           Quotation Sent By

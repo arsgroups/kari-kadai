@@ -86,11 +86,15 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     doc.addImage(headerInfo.dataUrl, headerInfo.format, 14, 10, bannerWidth, bannerHeight)
 
     const metaY = 10 + bannerHeight + 8
-    doc.setFontSize(10)
-    doc.text(COMPANY.name, 14, metaY)
     doc.setFontSize(8)
-    doc.text(`UEN: ${COMPANY.uen}`, 14, metaY + 4)
+    doc.text('Bill To:', 14, metaY)
     doc.setFontSize(10)
+    doc.text(invoice.customers?.name ?? 'Counter Sale', 14, metaY + 4)
+    const addressLines = invoice.customers?.address ? invoice.customers.address.split('\n').filter(Boolean) : []
+    doc.setFontSize(9)
+    if (addressLines.length) doc.text(addressLines, 14, metaY + 9)
+    const addressExtra = Math.max(addressLines.length - 1, 0) * 5
+    if (invoice.customers?.contact) doc.text(invoice.customers.contact, 14, metaY + 9 + addressExtra + 4)
 
     doc.setFontSize(14)
     doc.text('TAX INVOICE', 150, metaY - 4)
@@ -101,11 +105,6 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     if (invoice.payment_type === 'Credit' && invoice.due_date) {
       doc.text(`Due: ${formatDate(invoice.due_date)}`, 150, metaY + 18)
     }
-
-    doc.text(`Customer: ${invoice.customers?.name ?? 'Counter Sale'}`, 14, metaY + 10)
-    const addressLines = invoice.customers?.address ? invoice.customers.address.split('\n').filter(Boolean) : []
-    if (addressLines.length) doc.text(addressLines, 14, metaY + 15)
-    const addressExtra = Math.max(addressLines.length - 1, 0) * 5
 
     autoTable(doc, {
       startY: metaY + 23 + addressExtra,
@@ -212,10 +211,18 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
         <div className="invoice-meta-row">
           <div>
-            <div className="invoice-legal-name muted">{COMPANY.name}</div>
-            <div className="muted" style={{ fontSize: '0.8rem' }}>
-              UEN: {COMPANY.uen}
-            </div>
+            <div className="invoice-legal-name muted">Bill To:</div>
+            <strong>{invoice.customers?.name ?? 'Counter Sale'}</strong>
+            {invoice.customers?.address && (
+              <div className="muted" style={{ whiteSpace: 'pre-line', fontSize: '0.85rem' }}>
+                {invoice.customers.address}
+              </div>
+            )}
+            {invoice.customers?.contact && (
+              <div className="muted" style={{ fontSize: '0.85rem' }}>
+                {invoice.customers.contact}
+              </div>
+            )}
           </div>
           <div style={{ textAlign: 'right' }}>
             <h1 style={{ margin: 0 }}>TAX INVOICE</h1>
@@ -226,16 +233,6 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
               <p style={{ margin: '0.2rem 0' }}>Due: {formatDate(invoice.due_date)}</p>
             )}
           </div>
-        </div>
-
-        <div className="invoice-customer">
-          <strong>Bill To:</strong> {invoice.customers?.name ?? 'Counter Sale'}
-          {invoice.customers?.address && (
-            <div className="muted" style={{ whiteSpace: 'pre-line' }}>
-              {invoice.customers.address}
-            </div>
-          )}
-          {invoice.customers?.contact && <div className="muted">{invoice.customers.contact}</div>}
         </div>
 
         <table className="data-table invoice-items">

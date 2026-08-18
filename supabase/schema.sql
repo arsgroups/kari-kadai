@@ -220,6 +220,7 @@ create table if not exists quotations (
   channel text not null check (channel in ('Restaurant', 'Home Delivery', 'Counter')),
   customer_name text,
   customer_address text,
+  customer_contact text,
   sent_by_name text,
   sent_by_contact text,
   created_at timestamptz not null default now()

@@ -84,11 +84,15 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
     doc.addImage(headerInfo.dataUrl, headerInfo.format, 14, 10, bannerWidth, bannerHeight)
 
     const metaY = 10 + bannerHeight + 8
-    doc.setFontSize(10)
-    doc.text(COMPANY.name, 14, metaY)
     doc.setFontSize(8)
-    doc.text(`UEN: ${COMPANY.uen}`, 14, metaY + 4)
+    doc.text('To:', 14, metaY)
     doc.setFontSize(10)
+    doc.text(quotation.customer_name, 14, metaY + 4)
+    const addressLines = quotation.customer_address ? quotation.customer_address.split('\n').filter(Boolean) : []
+    doc.setFontSize(9)
+    if (addressLines.length) doc.text(addressLines, 14, metaY + 9)
+    const addressExtra = Math.max(addressLines.length - 1, 0) * 5
+    if (quotation.customer_contact) doc.text(quotation.customer_contact, 14, metaY + 9 + addressExtra + 4)
 
     doc.setFontSize(14)
     doc.text('QUOTATION', 150, metaY - 4)
@@ -96,11 +100,6 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
     doc.text(`Quotation No: ${quotation.quotation_number}`, 150, metaY + 3)
     doc.text(`Date: ${formatDate(quotation.date)}`, 150, metaY + 8)
     doc.text(`Channel: ${quotation.channel}`, 150, metaY + 13)
-
-    doc.text(`Customer: ${quotation.customer_name}`, 14, metaY + 10)
-    const addressLines = quotation.customer_address ? quotation.customer_address.split('\n').filter(Boolean) : []
-    if (addressLines.length) doc.text(addressLines, 14, metaY + 15)
-    const addressExtra = Math.max(addressLines.length - 1, 0) * 5
 
     autoTable(doc, {
       startY: metaY + 23 + addressExtra,
@@ -172,10 +171,18 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
 
         <div className="invoice-meta-row">
           <div>
-            <div className="invoice-legal-name muted">{COMPANY.name}</div>
-            <div className="muted" style={{ fontSize: '0.8rem' }}>
-              UEN: {COMPANY.uen}
-            </div>
+            <div className="invoice-legal-name muted">To:</div>
+            <strong>{quotation.customer_name}</strong>
+            {quotation.customer_address && (
+              <div className="muted" style={{ whiteSpace: 'pre-line', fontSize: '0.85rem' }}>
+                {quotation.customer_address}
+              </div>
+            )}
+            {quotation.customer_contact && (
+              <div className="muted" style={{ fontSize: '0.85rem' }}>
+                {quotation.customer_contact}
+              </div>
+            )}
           </div>
           <div style={{ textAlign: 'right' }}>
             <h1 style={{ margin: 0 }}>QUOTATION</h1>
@@ -185,15 +192,6 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
             <p style={{ margin: '0.2rem 0' }}>Date: {formatDate(quotation.date)}</p>
             <p style={{ margin: '0.2rem 0' }}>Channel: {quotation.channel}</p>
           </div>
-        </div>
-
-        <div className="invoice-customer">
-          <strong>To:</strong> {quotation.customer_name}
-          {quotation.customer_address && (
-            <div className="muted" style={{ whiteSpace: 'pre-line' }}>
-              {quotation.customer_address}
-            </div>
-          )}
         </div>
 
         <table className="data-table invoice-items">
