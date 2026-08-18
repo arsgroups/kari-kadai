@@ -1,4 +1,4 @@
-# Kari Kadai
+# Supreme Meat
 
 Inventory, sales, and accounting dashboard for a meat retail shop. React (Vite) frontend, Supabase (Postgres + Auth) backend.
 

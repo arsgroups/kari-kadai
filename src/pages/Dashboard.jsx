@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabaseClient'
 import { formatMoney, toISODate } from '../lib/format'
+import { COMPANY } from '../lib/companyInfo'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -70,7 +71,7 @@ export default function Dashboard() {
 
   return (
     <div className="page">
-      <h1>Welcome to Kari Kadai</h1>
+      <h1>Welcome to {COMPANY.name}</h1>
       <p className="muted">Signed in as {user?.email}</p>
 
       {loading ? (

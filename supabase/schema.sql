@@ -1,5 +1,5 @@
 -- ============================================================================
--- Kari Kadai — Database Schema
+-- Supreme Meat — Database Schema
 -- Run this once in Supabase SQL Editor (Project → SQL Editor → New query)
 -- Safe to re-run: uses "if not exists" / "create or replace" where possible.
 -- ============================================================================

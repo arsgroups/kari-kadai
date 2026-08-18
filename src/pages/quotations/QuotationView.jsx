@@ -74,6 +74,12 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
     return it.special_price ?? it.listed_price ?? 0
   }
 
+  // Clarifies the price is per that quantity, e.g. "1 Kg" / "1 Unit" rather
+  // than a bare "Kg" / "Unit".
+  function unitLabel(unit) {
+    return unit ? `1 ${unit}` : ''
+  }
+
   async function downloadPdf() {
     if (!quotation) return
     const doc = new jsPDF()
@@ -104,7 +110,7 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
     autoTable(doc, {
       startY: metaY + 23 + addressExtra,
       head: [['S.No', 'Item', 'Unit', 'Price']],
-      body: items.map((it, i) => [String(i + 1), it.display_name, it.unit ?? '', formatMoney(itemPrice(it))]),
+      body: items.map((it, i) => [String(i + 1), it.display_name, unitLabel(it.unit), formatMoney(itemPrice(it))]),
       styles: { fontSize: 9 },
       headStyles: { fillColor: [122, 31, 31] },
     })
@@ -208,7 +214,7 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
               <tr key={it.id}>
                 <td>{i + 1}</td>
                 <td>{it.display_name}</td>
-                <td>{it.unit}</td>
+                <td>{unitLabel(it.unit)}</td>
                 <td>{formatMoney(itemPrice(it))}</td>
               </tr>
             ))}

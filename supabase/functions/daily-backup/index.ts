@@ -172,7 +172,7 @@ function sqlEscape(value: unknown): string {
 
 function buildSqlDump(date: string, tableData: Record<string, Record<string, unknown>[]>): string {
   const lines: string[] = [
-    `-- Kari Kadai data backup — ${date}`,
+    `-- Supreme Meat data backup — ${date}`,
     `-- Generated automatically. This is a data dump (INSERT statements), not a`,
     `-- full pg_dump schema export — restore into a database that already has`,
     `-- the schema from supabase/schema.sql applied.`,

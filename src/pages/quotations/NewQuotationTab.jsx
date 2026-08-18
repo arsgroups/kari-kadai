@@ -3,10 +3,6 @@ import { supabase } from '../../lib/supabaseClient'
 import { toISODate, formatMoney } from '../../lib/format'
 import QuotationView from './QuotationView'
 
-function emptyLine() {
-  return { key: crypto.randomUUID(), product_id: '', listed_price: '', special_price: '' }
-}
-
 export default function NewQuotationTab() {
   const [products, setProducts] = useState([])
   const [channelConfig, setChannelConfig] = useState({}) // product_id -> { [channel]: { display_name, is_visible } }
@@ -18,7 +14,8 @@ export default function NewQuotationTab() {
   const [customerContact, setCustomerContact] = useState('')
   const [sentByName, setSentByName] = useState('')
   const [sentByContact, setSentByContact] = useState('')
-  const [lines, setLines] = useState([emptyLine()])
+  const [removedIds, setRemovedIds] = useState(() => new Set())
+  const [specialPrices, setSpecialPrices] = useState({}) // product_id -> value
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [savedQuotationId, setSavedQuotationId] = useState(null)
@@ -42,8 +39,9 @@ export default function NewQuotationTab() {
     })
   }, [])
 
-  // Items actually offered on the selected channel, with their channel
-  // display name and listed (channel default) price applied.
+  // Every item offered on the selected channel, with its channel display
+  // name and listed (channel default) price applied. Starts fully in the
+  // quotation — cross an item out to leave it off before saving.
   const channelProducts = products
     .filter((p) => !p.supplier_only && channelConfig[p.id]?.[channel]?.is_visible !== false)
     .map((p) => ({
@@ -52,34 +50,33 @@ export default function NewQuotationTab() {
       listedPrice: (channel === 'Restaurant' ? p.restaurant_price : p.counter_price) ?? p.default_selling_price,
     }))
 
-  function updateLine(key, patch) {
-    setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)))
+  // Reset removals/special prices whenever the channel (or its item set) changes.
+  useEffect(() => {
+    setRemovedIds(new Set())
+    setSpecialPrices({})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel])
+
+  const gridRows = channelProducts.filter((p) => !removedIds.has(p.id))
+
+  function removeItem(productId) {
+    setRemovedIds((prev) => new Set(prev).add(productId))
   }
 
-  function handleProductChange(key, productId) {
-    const product = channelProducts.find((p) => p.id === productId)
-    updateLine(key, { product_id: productId, listed_price: product?.listedPrice ?? '' })
-  }
-
-  function addLine() {
-    setLines([...lines, emptyLine()])
-  }
-
-  function removeLine(key) {
-    setLines(lines.filter((l) => l.key !== key))
+  function resetList() {
+    setRemovedIds(new Set())
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
 
-    const validLines = lines.filter((l) => l.product_id)
     if (!customerName.trim()) {
       setError('Enter the customer name.')
       return
     }
-    if (validLines.length === 0) {
-      setError('Add at least one item.')
+    if (gridRows.length === 0) {
+      setError('At least one item must remain in the quotation.')
       return
     }
 
@@ -105,17 +102,14 @@ export default function NewQuotationTab() {
       return
     }
 
-    const itemRows = validLines.map((l) => {
-      const product = channelProducts.find((p) => p.id === l.product_id)
-      return {
-        quotation_id: quotation.id,
-        product_id: l.product_id,
-        display_name: product?.channelName || 'Item',
-        unit: product?.sales_unit || null,
-        listed_price: l.listed_price === '' ? null : Number(l.listed_price),
-        special_price: l.special_price === '' ? null : Number(l.special_price),
-      }
-    })
+    const itemRows = gridRows.map((p) => ({
+      quotation_id: quotation.id,
+      product_id: p.id,
+      display_name: p.channelName,
+      unit: p.sales_unit || null,
+      listed_price: p.listedPrice ?? null,
+      special_price: specialPrices[p.id] ? Number(specialPrices[p.id]) : null,
+    }))
 
     const { error: itemsError } = await supabase.from('quotation_items').insert(itemRows)
 
@@ -135,7 +129,8 @@ export default function NewQuotationTab() {
     setCustomerContact('')
     setSentByName('')
     setSentByContact('')
-    setLines([emptyLine()])
+    setRemovedIds(new Set())
+    setSpecialPrices({})
   }
 
   if (savedQuotationId) {
@@ -158,13 +153,7 @@ export default function NewQuotationTab() {
       <div className="form-grid">
         <label>
           Channel
-          <select
-            value={channel}
-            onChange={(e) => {
-              setChannel(e.target.value)
-              setLines([emptyLine()])
-            }}
-          >
+          <select value={channel} onChange={(e) => setChannel(e.target.value)}>
             <option>Restaurant</option>
             <option>Home Delivery</option>
             <option>Counter</option>
@@ -196,61 +185,63 @@ export default function NewQuotationTab() {
         </label>
       </div>
 
-      <table className="data-table" style={{ marginTop: '1.25rem' }}>
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th>Unit</th>
-            <th>Listed Price</th>
-            <th>Special Price</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((line) => {
-            const product = channelProducts.find((p) => p.id === line.product_id)
-            return (
-              <tr key={line.key}>
-                <td>
-                  <select value={line.product_id} onChange={(e) => handleProductChange(line.key, e.target.value)}>
-                    <option value="">Select item…</option>
-                    {channelProducts.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.channelName}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>{product?.sales_unit || '—'}</td>
-                <td>{line.listed_price !== '' ? formatMoney(line.listed_price) : '—'}</td>
+      <div className="toolbar" style={{ marginTop: '1.25rem' }}>
+        <p className="muted" style={{ fontSize: '0.85rem', margin: 0 }}>
+          Every item offered on this channel is included by default — click ✕ to leave one out. Leave Special
+          Price blank to quote the Listed Price.
+        </p>
+        {removedIds.size > 0 && (
+          <button type="button" className="btn-secondary" onClick={resetList}>
+            Reset List ({removedIds.size} removed)
+          </button>
+        )}
+      </div>
+
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Unit</th>
+              <th>Listed Price</th>
+              <th>Special Price</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {gridRows.map((p) => (
+              <tr key={p.id}>
+                <td>{p.channelName}</td>
+                <td>{p.sales_unit || '—'}</td>
+                <td>{p.listedPrice != null ? formatMoney(p.listedPrice) : '—'}</td>
                 <td>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     style={{ width: 100 }}
-                    placeholder={line.listed_price !== '' ? String(line.listed_price) : ''}
-                    value={line.special_price}
-                    onChange={(e) => updateLine(line.key, { special_price: e.target.value })}
+                    placeholder={p.listedPrice != null ? String(p.listedPrice) : ''}
+                    value={specialPrices[p.id] ?? ''}
+                    onChange={(e) => setSpecialPrices({ ...specialPrices, [p.id]: e.target.value })}
                   />
                 </td>
                 <td>
-                  <button type="button" className="btn-secondary" onClick={() => removeLine(line.key)}>
+                  <button type="button" className="btn-secondary" onClick={() => removeItem(p.id)}>
                     ✕
                   </button>
                 </td>
               </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      <button type="button" className="btn-secondary" style={{ marginTop: '0.75rem' }} onClick={addLine}>
-        + Add Item
-      </button>
-
-      <p className="muted" style={{ fontSize: '0.8rem', marginTop: '0.75rem' }}>
-        Leave Special Price blank to quote the Listed Price.
-      </p>
+            ))}
+            {gridRows.length === 0 && (
+              <tr>
+                <td colSpan={5} className="muted">
+                  No items left — Reset List to bring them back.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <button className="btn" style={{ marginTop: '1rem' }} onClick={handleSubmit} disabled={saving}>
         {saving ? 'Saving…' : 'Save Quotation'}
