@@ -99,15 +99,17 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     const doc = new jsPDF()
     doc.setFontSize(16)
     doc.text(COMPANY.name, 14, 18)
+    doc.setFontSize(9)
+    doc.text(`UEN: ${COMPANY.uen}`, 14, 23)
     doc.setFontSize(12)
-    doc.text('DAILY CLOSING REPORT', 14, 27)
+    doc.text('DAILY CLOSING REPORT', 14, 31)
     doc.setFontSize(10)
-    doc.text(`Date: ${formatDate(date)}`, 14, 34)
-    doc.text(`Operator: ${operatorEmail}`, 14, 39)
-    doc.text(`Printed on: ${new Date().toLocaleString('en-SG')}`, 14, 44)
+    doc.text(`Date: ${formatDate(date)}`, 14, 38)
+    doc.text(`Operator: ${operatorEmail}`, 14, 43)
+    doc.text(`Printed on: ${new Date().toLocaleString('en-SG')}`, 14, 48)
 
     autoTable(doc, {
-      startY: 51,
+      startY: 55,
       head: [['Summary', 'Amount (SGD)']],
       body: [
         ['Cash Sales', formatMoney(data.cashSales)],
@@ -179,6 +181,9 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
             <h2 style={{ margin: 0 }}>{COMPANY.name}</h2>
             <p className="muted" style={{ margin: '0.2rem 0' }}>
               {COMPANY.addressLine1}, {COMPANY.addressLine2}
+            </p>
+            <p className="muted" style={{ margin: '0.2rem 0', fontSize: '0.8rem' }}>
+              UEN: {COMPANY.uen}
             </p>
           </div>
           <div style={{ textAlign: 'right' }}>

@@ -66,6 +66,9 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     const metaY = 10 + bannerHeight + 8
     doc.setFontSize(10)
     doc.text(COMPANY.name, 14, metaY)
+    doc.setFontSize(8)
+    doc.text(`UEN: ${COMPANY.uen}`, 14, metaY + 4)
+    doc.setFontSize(10)
 
     doc.setFontSize(14)
     doc.text('TAX INVOICE', 150, metaY - 4)
@@ -179,7 +182,12 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         <img src={invoiceHeaderImg} alt={COMPANY.name} className="invoice-banner" />
 
         <div className="invoice-meta-row">
-          <div className="invoice-legal-name muted">{COMPANY.name}</div>
+          <div>
+            <div className="invoice-legal-name muted">{COMPANY.name}</div>
+            <div className="muted" style={{ fontSize: '0.8rem' }}>
+              UEN: {COMPANY.uen}
+            </div>
+          </div>
           <div style={{ textAlign: 'right' }}>
             <h1 style={{ margin: 0 }}>TAX INVOICE</h1>
             <p style={{ margin: '0.2rem 0' }}>Invoice No: <strong>{invoice.invoice_number}</strong></p>
