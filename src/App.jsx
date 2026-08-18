@@ -18,6 +18,7 @@ import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import Promotions from './pages/Promotions'
 import AuditLog from './pages/AuditLog'
+import Quotations from './pages/Quotations'
 
 export default function App() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="inventory" element={<Inventory />} />
             <Route path="sales" element={<Sales />} />
+            <Route path="quotations" element={<Quotations />} />
             <Route path="purchases" element={<Purchases />} />
             <Route path="petty-cash" element={<Navigate to="/expenses/daily" replace />} />
             <Route path="expenses" element={<Navigate to="/expenses/daily" replace />} />

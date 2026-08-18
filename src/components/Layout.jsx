@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/inventory', label: 'Inventory' },
   { to: '/sales', label: 'Sales' },
+  { to: '/quotations', label: 'Quotation Generator' },
   { to: '/purchases', label: 'Purchases' },
   { to: '/promotions', label: 'Promotions', adminOnly: true },
   { to: '/customers', label: 'Customers & Credit' },
