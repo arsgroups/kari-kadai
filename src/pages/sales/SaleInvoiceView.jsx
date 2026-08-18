@@ -7,14 +7,29 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { useAuth } from '../../contexts/AuthContext'
 
-function loadImageAsDataUrl(url) {
+// Fetches an image (bundled asset or a configured Storage URL) and resolves
+// its PDF-ready data URL along with format + natural size, so a custom
+// upload of any aspect ratio still renders at the correct proportions.
+function loadImageInfo(url) {
   return fetch(url)
     .then((res) => res.blob())
     .then(
       (blob) =>
         new Promise((resolve, reject) => {
           const reader = new FileReader()
-          reader.onloadend = () => resolve(reader.result)
+          reader.onloadend = () => {
+            const dataUrl = reader.result
+            const img = new Image()
+            img.onload = () =>
+              resolve({
+                dataUrl,
+                format: blob.type.includes('png') ? 'PNG' : 'JPEG',
+                width: img.naturalWidth,
+                height: img.naturalHeight,
+              })
+            img.onerror = reject
+            img.src = dataUrl
+          }
           reader.onerror = reject
           reader.readAsDataURL(blob)
         })
@@ -25,6 +40,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   const { isAdmin } = useAuth()
   const [invoice, setInvoice] = useState(null)
   const [items, setItems] = useState([])
+  const [branding, setBranding] = useState(null)
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
@@ -36,7 +52,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
   async function load() {
     setLoading(true)
-    const [{ data: inv }, { data: itemRows }] = await Promise.all([
+    const [{ data: inv }, { data: itemRows }, { data: brandingRow }] = await Promise.all([
       supabase
         .from('sale_invoices')
         .select('*, customers(name, address, contact)')
@@ -46,22 +62,28 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         .from('sale_invoice_items')
         .select('*, products(name)')
         .eq('sale_invoice_id', invoiceId),
+      supabase.from('branding_settings').select('header_image_url, footer_image_url').single(),
     ])
     setInvoice(inv)
     setItems(itemRows ?? [])
+    setBranding(brandingRow)
     setLoading(false)
   }
+
+  const headerImageUrl = branding?.header_image_url || invoiceHeaderImg
+  const footerImageUrl = branding?.footer_image_url || null
 
   async function downloadPdf() {
     if (!invoice) return
     const showDiscount = items.some((it) => Number(it.discount) > 0)
     const doc = new jsPDF()
 
-    // Banner is 1200x431px (~2.784:1) — fit it to the usable A4 width (210mm - 2*14mm margin).
+    // Fit the header to the usable A4 width (210mm - 2*14mm margin), at
+    // whatever aspect ratio the configured (or default) image actually has.
     const bannerWidth = 182
-    const bannerHeight = bannerWidth / (1200 / 431)
-    const bannerDataUrl = await loadImageAsDataUrl(invoiceHeaderImg)
-    doc.addImage(bannerDataUrl, 'JPEG', 14, 10, bannerWidth, bannerHeight)
+    const headerInfo = await loadImageInfo(headerImageUrl)
+    const bannerHeight = bannerWidth / (headerInfo.width / headerInfo.height)
+    doc.addImage(headerInfo.dataUrl, headerInfo.format, 14, 10, bannerWidth, bannerHeight)
 
     const metaY = 10 + bannerHeight + 8
     doc.setFontSize(10)
@@ -113,6 +135,13 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
     doc.setFontSize(11)
     doc.text('Thank you for your business!', 14, finalY + 30)
+
+    if (footerImageUrl) {
+      const footerInfo = await loadImageInfo(footerImageUrl)
+      const footerWidth = 182
+      const footerHeight = footerWidth / (footerInfo.width / footerInfo.height)
+      doc.addImage(footerInfo.dataUrl, footerInfo.format, 14, finalY + 36, footerWidth, footerHeight)
+    }
 
     doc.save(`${invoice.invoice_number}.pdf`)
   }
@@ -179,7 +208,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
       {deleteError && <div className="inline-error no-print">{deleteError}</div>}
 
       <div className="invoice-sheet">
-        <img src={invoiceHeaderImg} alt={COMPANY.name} className="invoice-banner" />
+        <img src={headerImageUrl} alt={COMPANY.name} className="invoice-banner" />
 
         <div className="invoice-meta-row">
           <div>
@@ -272,6 +301,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         <div className="invoice-footer">
           <p>Thank you for your business!</p>
           <div className="invoice-signature">Signature: ______________________</div>
+          {footerImageUrl && <img src={footerImageUrl} alt="" className="invoice-banner" style={{ marginTop: '1rem' }} />}
         </div>
       </div>
     </div>

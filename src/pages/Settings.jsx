@@ -29,15 +29,65 @@ export default function Settings() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  const [branding, setBranding] = useState(null)
+  const [uploadingHeader, setUploadingHeader] = useState(false)
+  const [uploadingFooter, setUploadingFooter] = useState(false)
+  const [brandingError, setBrandingError] = useState('')
+
   async function load() {
     setLoading(true)
-    const [{ data: s }, { data: l }] = await Promise.all([
+    const [{ data: s }, { data: l }, { data: b }] = await Promise.all([
       supabase.from('backup_settings').select('*').single(),
       supabase.from('backup_logs').select('*').order('created_at', { ascending: false }).limit(20),
+      supabase.from('branding_settings').select('*').single(),
     ])
     setSettings(s)
     setLogs(l ?? [])
+    setBranding(b)
     setLoading(false)
+  }
+
+  async function handleImageUpload(slot, file) {
+    if (!file) return
+    const setUploading = slot === 'header' ? setUploadingHeader : setUploadingFooter
+    setUploading(true)
+    setBrandingError('')
+    const ext = file.name.split('.').pop()
+    const path = `${slot}-${Date.now()}.${ext}`
+    const { error: uploadError } = await supabase.storage
+      .from('branding')
+      .upload(path, file, { contentType: file.type })
+    if (uploadError) {
+      setUploading(false)
+      setBrandingError(uploadError.message)
+      return
+    }
+    const { data: urlData } = supabase.storage.from('branding').getPublicUrl(path)
+    const column = slot === 'header' ? 'header_image_url' : 'footer_image_url'
+    const { error: updateError } = await supabase
+      .from('branding_settings')
+      .update({ [column]: urlData.publicUrl, updated_at: new Date().toISOString() })
+      .eq('id', branding.id)
+    setUploading(false)
+    if (updateError) {
+      setBrandingError(updateError.message)
+      return
+    }
+    load()
+  }
+
+  async function handleImageReset(slot) {
+    const column = slot === 'header' ? 'header_image_url' : 'footer_image_url'
+    setBrandingError('')
+    const { error: updateError } = await supabase
+      .from('branding_settings')
+      .update({ [column]: null, updated_at: new Date().toISOString() })
+      .eq('id', branding.id)
+    if (updateError) {
+      setBrandingError(updateError.message)
+      return
+    }
+    load()
   }
 
   useEffect(() => {
@@ -97,13 +147,80 @@ export default function Settings() {
     load()
   }
 
-  if (loading || !settings) return <p className="muted">Loading…</p>
+  if (loading || !settings || !branding) return <p className="muted">Loading…</p>
 
   return (
     <div className="page">
       <h1>Settings</h1>
 
       <UserRolesPanel />
+
+      <div className="card">
+        <h3>Invoice Branding</h3>
+        <p className="muted" style={{ fontSize: '0.85rem' }}>
+          Upload images to replace the banner shown at the top (and optionally bottom) of printed Sale
+          Invoices. Leave unset to use the default header and no footer image.
+        </p>
+        <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+          <div>
+            <strong>Header Image</strong>
+            <div style={{ margin: '0.5rem 0' }}>
+              {branding.header_image_url ? (
+                <img
+                  src={branding.header_image_url}
+                  alt="Invoice header"
+                  style={{ maxWidth: 280, display: 'block', borderRadius: 6 }}
+                />
+              ) : (
+                <p className="muted" style={{ fontSize: '0.85rem' }}>
+                  Using the default bundled header.
+                </p>
+              )}
+            </div>
+            <input
+              type="file"
+              accept="image/*"
+              disabled={uploadingHeader}
+              onChange={(e) => handleImageUpload('header', e.target.files?.[0])}
+            />
+            {uploadingHeader && <p className="muted">Uploading…</p>}
+            {branding.header_image_url && (
+              <button type="button" className="btn-secondary" style={{ marginTop: '0.5rem' }} onClick={() => handleImageReset('header')}>
+                Reset to Default
+              </button>
+            )}
+          </div>
+          <div>
+            <strong>Footer Image (optional)</strong>
+            <div style={{ margin: '0.5rem 0' }}>
+              {branding.footer_image_url ? (
+                <img
+                  src={branding.footer_image_url}
+                  alt="Invoice footer"
+                  style={{ maxWidth: 280, display: 'block', borderRadius: 6 }}
+                />
+              ) : (
+                <p className="muted" style={{ fontSize: '0.85rem' }}>
+                  No footer image set.
+                </p>
+              )}
+            </div>
+            <input
+              type="file"
+              accept="image/*"
+              disabled={uploadingFooter}
+              onChange={(e) => handleImageUpload('footer', e.target.files?.[0])}
+            />
+            {uploadingFooter && <p className="muted">Uploading…</p>}
+            {branding.footer_image_url && (
+              <button type="button" className="btn-secondary" style={{ marginTop: '0.5rem' }} onClick={() => handleImageReset('footer')}>
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+        {brandingError && <div className="inline-error">{brandingError}</div>}
+      </div>
 
       <div className="card">
         <h3>Backup Settings</h3>
