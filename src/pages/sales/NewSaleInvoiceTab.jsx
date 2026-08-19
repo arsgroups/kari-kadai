@@ -171,15 +171,11 @@ export default function NewSaleInvoiceTab() {
   const requiresCustomer = channel !== 'Counter'
   const filteredCustomers = useMemo(() => customers.filter((c) => c.type === channel), [customers, channel])
   const rate = getRate(date)
-  // Counter and Home Delivery quote tax-inclusive prices — the Price field
-  // shows/accepts the inclusive figure, nothing is added on top of it, and
-  // no tax wording/columns show at all (Just Price, Discount, Total).
-  // Restaurant is unchanged: Price is tax-exclusive, tax is added on top,
-  // and the full Tax breakdown still shows. The stored line rate always
-  // stays GST-exclusive internally either way, so every report that reads
-  // subtotal/amount (P&L, GST return, ledgers, ...) keeps working — only
-  // the entry/display differs by channel.
-  const gstInclusiveEntry = channel !== 'Restaurant'
+  // Not GST-registered: Counter and Home Delivery charge exactly the entered
+  // Price, nothing added. Restaurant still adds a flat surcharge on top (see
+  // lineGst below) but it's folded silently into the line/invoice Total —
+  // no column, no breakout, no wording anywhere.
+  const isRestaurant = channel === 'Restaurant'
 
   // Products actually offered on the currently selected channel, with any
   // per-channel display name applied (e.g. "Mutton" here, "Fresh Goat/Lamb"
@@ -296,7 +292,7 @@ export default function NewSaleInvoiceTab() {
   }
 
   function lineGst(line) {
-    return line.gst_applicable ? round2(lineAmount(line) * (rate / 100)) : 0
+    return isRestaurant && line.gst_applicable ? round2(lineAmount(line) * (rate / 100)) : 0
   }
 
   const subtotal = round2(lines.reduce((sum, l) => sum + lineAmount(l), 0))
@@ -484,12 +480,6 @@ export default function NewSaleInvoiceTab() {
             <th>Available</th>
             <th>Price</th>
             <th>Discount</th>
-            {!gstInclusiveEntry && (
-              <>
-                <th>Tax?</th>
-                <th>Tax Amt</th>
-              </>
-            )}
             <th>Total</th>
             <th></th>
           </tr>
@@ -548,18 +538,9 @@ export default function NewSaleInvoiceTab() {
                   step="0.01"
                   min="0"
                   style={{ width: 90 }}
-                  value={
-                    !isFreeLine && gstInclusiveEntry && line.rate !== ''
-                      ? round2(Number(line.rate) * (1 + rate / 100))
-                      : line.rate
-                  }
+                  value={line.rate}
                   disabled={isFreeLine}
-                  onChange={(e) => {
-                    const typed = e.target.value
-                    const newRate =
-                      gstInclusiveEntry && typed !== '' ? round2(Number(typed) / (1 + rate / 100)) : typed
-                    updateLine(line.key, { rate: newRate })
-                  }}
+                  onChange={(e) => updateLine(line.key, { rate: e.target.value })}
                 />
               </td>
               <td>
@@ -578,19 +559,6 @@ export default function NewSaleInvoiceTab() {
                   onChange={(e) => updateLine(line.key, { discount: e.target.value })}
                 />
               </td>
-              {!gstInclusiveEntry && (
-                <>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={line.gst_applicable}
-                      disabled={isFreeLine}
-                      onChange={(e) => updateLine(line.key, { gst_applicable: e.target.checked })}
-                    />
-                  </td>
-                  <td>{formatMoney(lineGst(line))}</td>
-                </>
-              )}
               <td>{formatMoney(lineAmount(line) + lineGst(line))}</td>
               <td>
                 <button type="button" className="btn-secondary" onClick={() => removeLine(line.key)}>
@@ -609,20 +577,8 @@ export default function NewSaleInvoiceTab() {
       <div className="card" style={{ marginTop: '1.25rem', maxWidth: 320 }}>
         <table className="data-table">
           <tbody>
-            {!gstInclusiveEntry && (
-              <>
-                <tr>
-                  <td>Subtotal</td>
-                  <td>{formatMoney(subtotal)}</td>
-                </tr>
-                <tr>
-                  <td>Tax ({rate}%)</td>
-                  <td>{formatMoney(gstTotal)}</td>
-                </tr>
-              </>
-            )}
             <tr style={{ fontWeight: 700 }}>
-              <td>{gstInclusiveEntry ? 'Total' : 'Grand Total'}</td>
+              <td>Total</td>
               <td>{formatMoney(grandTotal)}</td>
             </tr>
           </tbody>
