@@ -72,6 +72,10 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
   const headerImageUrl = branding?.header_image_url || invoiceHeaderImg
   const footerImageUrl = branding?.footer_image_url || null
+  // Counter/Home Delivery quote tax-inclusive prices — no tax wording or
+  // breakdown shows anywhere on the invoice for those channels, just Price
+  // and Total. Restaurant is unchanged: full Tax Invoice with breakdown.
+  const gstInclusiveEntry = invoice?.channel !== 'Restaurant'
 
   async function downloadPdf() {
     if (!invoice) return
@@ -97,7 +101,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     if (invoice.customers?.contact) doc.text(invoice.customers.contact, 14, metaY + 9 + addressExtra + 4)
 
     doc.setFontSize(14)
-    doc.text('TAX INVOICE', 150, metaY - 4)
+    doc.text(gstInclusiveEntry ? 'INVOICE' : 'TAX INVOICE', 150, metaY - 4)
     doc.setFontSize(10)
     doc.text(`Invoice No: ${invoice.invoice_number}`, 150, metaY + 3)
     doc.text(`Date: ${formatDate(invoice.date)}`, 150, metaY + 8)
@@ -108,38 +112,47 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
     autoTable(doc, {
       startY: metaY + 23 + addressExtra,
-      head: [['Item', 'Qty', 'Unit', 'Price', ...(showDiscount ? ['Discount'] : []), 'Tax', 'Total']],
+      head: [
+        ['Item', 'Qty', 'Unit', 'Price', ...(showDiscount ? ['Discount'] : []), ...(gstInclusiveEntry ? [] : ['Tax']), 'Total'],
+      ],
       body: items.map((it) => [
         it.display_name || it.products?.name || '',
         String(it.quantity),
         it.unit ?? '',
         formatMoney(it.rate),
         ...(showDiscount ? [formatMoney(it.discount)] : []),
-        it.gst_applicable ? formatMoney(it.gst_amount) : '-',
+        ...(gstInclusiveEntry ? [] : [it.gst_applicable ? formatMoney(it.gst_amount) : '-']),
         formatMoney(it.amount + (it.gst_applicable ? it.gst_amount : 0)),
       ]),
       styles: { fontSize: 9 },
       headStyles: { fillColor: [122, 31, 31] },
     })
 
-    const finalY = doc.lastAutoTable.finalY + 10
+    let y = doc.lastAutoTable.finalY + 10
     doc.setFontSize(10)
-    doc.text(`Subtotal: ${formatMoney(invoice.subtotal)}`, 150, finalY)
-    doc.text(`Tax: ${formatMoney(invoice.gst_amount)}`, 150, finalY + 5)
+    if (!gstInclusiveEntry) {
+      doc.text(`Subtotal: ${formatMoney(invoice.subtotal)}`, 150, y)
+      y += 5
+      doc.text(`Tax: ${formatMoney(invoice.gst_amount)}`, 150, y)
+      y += 7
+    }
     doc.setFontSize(12)
-    doc.text(`Grand Total: ${formatMoney(invoice.total)}`, 150, finalY + 12)
+    doc.text(`${gstInclusiveEntry ? 'Total' : 'Grand Total'}: ${formatMoney(invoice.total)}`, 150, y)
+    y += 7
     doc.setFontSize(10)
-    doc.text(`Paid: ${formatMoney(invoice.paid_amount)}`, 150, finalY + 19)
-    doc.text(`Balance: ${formatMoney(invoice.balance)}`, 150, finalY + 24)
+    doc.text(`Paid: ${formatMoney(invoice.paid_amount)}`, 150, y)
+    y += 5
+    doc.text(`Balance: ${formatMoney(invoice.balance)}`, 150, y)
+    y += 6
 
     doc.setFontSize(11)
-    doc.text('Thank you for your business!', 14, finalY + 30)
+    doc.text('Thank you for your business!', 14, y)
 
     if (footerImageUrl) {
       const footerInfo = await loadImageInfo(footerImageUrl)
       const footerWidth = 182
       const footerHeight = footerWidth / (footerInfo.width / footerInfo.height)
-      doc.addImage(footerInfo.dataUrl, footerInfo.format, 14, finalY + 36, footerWidth, footerHeight)
+      doc.addImage(footerInfo.dataUrl, footerInfo.format, 14, y + 6, footerWidth, footerHeight)
     }
 
     doc.save(`${invoice.invoice_number}.pdf`)
@@ -225,7 +238,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
             )}
           </div>
           <div style={{ textAlign: 'right' }}>
-            <h1 style={{ margin: 0 }}>TAX INVOICE</h1>
+            <h1 style={{ margin: 0 }}>{gstInclusiveEntry ? 'INVOICE' : 'TAX INVOICE'}</h1>
             <p style={{ margin: '0.2rem 0' }}>Invoice No: <strong>{invoice.invoice_number}</strong></p>
             <p style={{ margin: '0.2rem 0' }}>Date: {formatDate(invoice.date)}</p>
             <p style={{ margin: '0.2rem 0' }}>Payment: {invoice.payment_type}</p>
@@ -243,7 +256,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
               <th>Unit</th>
               <th>Price</th>
               {hasDiscount && <th>Discount</th>}
-              <th>Tax</th>
+              {!gstInclusiveEntry && <th>Tax</th>}
               <th>Total</th>
             </tr>
           </thead>
@@ -255,7 +268,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
                 <td>{it.unit}</td>
                 <td>{formatMoney(it.rate)}</td>
                 {hasDiscount && <td>{formatMoney(it.discount)}</td>}
-                <td>{it.gst_applicable ? formatMoney(it.gst_amount) : '—'}</td>
+                {!gstInclusiveEntry && <td>{it.gst_applicable ? formatMoney(it.gst_amount) : '—'}</td>}
                 <td>{formatMoney(it.amount + (it.gst_applicable ? it.gst_amount : 0))}</td>
               </tr>
             ))}
@@ -265,16 +278,20 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         <div className="invoice-totals">
           <table>
             <tbody>
-              <tr>
-                <td>Subtotal</td>
-                <td>{formatMoney(invoice.subtotal)}</td>
-              </tr>
-              <tr>
-                <td>Tax</td>
-                <td>{formatMoney(invoice.gst_amount)}</td>
-              </tr>
+              {!gstInclusiveEntry && (
+                <>
+                  <tr>
+                    <td>Subtotal</td>
+                    <td>{formatMoney(invoice.subtotal)}</td>
+                  </tr>
+                  <tr>
+                    <td>Tax</td>
+                    <td>{formatMoney(invoice.gst_amount)}</td>
+                  </tr>
+                </>
+              )}
               <tr style={{ fontWeight: 700 }}>
-                <td>Grand Total</td>
+                <td>{gstInclusiveEntry ? 'Total' : 'Grand Total'}</td>
                 <td>{formatMoney(invoice.total)}</td>
               </tr>
               <tr>
