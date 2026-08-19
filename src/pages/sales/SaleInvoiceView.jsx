@@ -108,7 +108,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
     autoTable(doc, {
       startY: metaY + 23 + addressExtra,
-      head: [['Item', 'Qty', 'Unit', 'Price', ...(showDiscount ? ['Discount'] : []), 'GST', 'Total']],
+      head: [['Item', 'Qty', 'Unit', 'Price', ...(showDiscount ? ['Discount'] : []), 'Tax', 'Total']],
       body: items.map((it) => [
         it.display_name || it.products?.name || '',
         String(it.quantity),
@@ -125,7 +125,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     const finalY = doc.lastAutoTable.finalY + 10
     doc.setFontSize(10)
     doc.text(`Subtotal: ${formatMoney(invoice.subtotal)}`, 150, finalY)
-    doc.text(`GST: ${formatMoney(invoice.gst_amount)}`, 150, finalY + 5)
+    doc.text(`Tax: ${formatMoney(invoice.gst_amount)}`, 150, finalY + 5)
     doc.setFontSize(12)
     doc.text(`Grand Total: ${formatMoney(invoice.total)}`, 150, finalY + 12)
     doc.setFontSize(10)
@@ -243,7 +243,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
               <th>Unit</th>
               <th>Price</th>
               {hasDiscount && <th>Discount</th>}
-              <th>GST</th>
+              <th>Tax</th>
               <th>Total</th>
             </tr>
           </thead>
@@ -270,7 +270,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
                 <td>{formatMoney(invoice.subtotal)}</td>
               </tr>
               <tr>
-                <td>GST</td>
+                <td>Tax</td>
                 <td>{formatMoney(invoice.gst_amount)}</td>
               </tr>
               <tr style={{ fontWeight: 700 }}>

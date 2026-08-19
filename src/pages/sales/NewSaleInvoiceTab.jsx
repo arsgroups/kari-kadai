@@ -481,10 +481,10 @@ export default function NewSaleInvoiceTab() {
             <th>Qty</th>
             <th>Unit</th>
             <th>Available</th>
-            <th>Price{gstInclusiveEntry ? ' (incl. GST)' : ''}</th>
+            <th>Price{gstInclusiveEntry ? ' (incl. Tax)' : ''}</th>
             <th>Discount</th>
-            <th>GST?</th>
-            <th>GST Amt</th>
+            <th>Tax?</th>
+            <th>Tax Amt</th>
             <th>Total</th>
             <th></th>
           </tr>
@@ -605,7 +605,7 @@ export default function NewSaleInvoiceTab() {
               <td>{formatMoney(subtotal)}</td>
             </tr>
             <tr>
-              <td>GST ({rate}%){gstInclusiveEntry ? ' — included in price' : ''}</td>
+              <td>Tax ({rate}%){gstInclusiveEntry ? ' — included in price' : ''}</td>
               <td>{formatMoney(gstTotal)}</td>
             </tr>
             <tr style={{ fontWeight: 700 }}>
