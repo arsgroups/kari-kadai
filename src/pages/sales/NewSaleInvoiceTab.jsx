@@ -583,7 +583,7 @@ export default function NewSaleInvoiceTab() {
               <>
                 <tr>
                   <td>9%</td>
-                  <td>{formatMoney(gstTotal)}</td>
+                  <td>S${gstTotal}</td>
                 </tr>
                 <tr style={{ fontWeight: 700 }}>
                   <td>Net Total</td>
