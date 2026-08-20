@@ -127,7 +127,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     doc.text(`Total: ${formatMoney(invoice.subtotal)}`, 150, y)
     y += isRestaurant ? 5 : 7
     if (isRestaurant) {
-      doc.text(`9%: S$${Math.round(Number(invoice.gst_amount))}`, 150, y)
+      doc.text(`S$${Math.round(Number(invoice.gst_amount))}`, 150, y)
       y += 7
       doc.setFontSize(12)
       doc.text(`Net Total: ${formatMoney(invoice.total)}`, 150, y)
@@ -277,7 +277,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
               {isRestaurant && (
                 <>
                   <tr>
-                    <td>9%</td>
+                    <td></td>
                     <td>S${Math.round(Number(invoice.gst_amount))}</td>
                   </tr>
                   <tr style={{ fontWeight: 700 }}>

@@ -582,7 +582,7 @@ export default function NewSaleInvoiceTab() {
             {isRestaurant && (
               <>
                 <tr>
-                  <td>9%</td>
+                  <td></td>
                   <td>S${gstTotal}</td>
                 </tr>
                 <tr style={{ fontWeight: 700 }}>
