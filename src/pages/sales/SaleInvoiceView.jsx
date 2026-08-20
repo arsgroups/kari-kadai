@@ -72,6 +72,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
   const headerImageUrl = branding?.header_image_url || invoiceHeaderImg
   const footerImageUrl = branding?.footer_image_url || null
+  const isRestaurant = invoice?.channel === 'Restaurant'
 
   async function downloadPdf() {
     if (!invoice) return
@@ -115,16 +116,23 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         it.unit ?? '',
         formatMoney(it.rate),
         ...(showDiscount ? [formatMoney(it.discount)] : []),
-        formatMoney(it.amount + (it.gst_applicable ? it.gst_amount : 0)),
+        formatMoney(it.amount),
       ]),
       styles: { fontSize: 9 },
       headStyles: { fillColor: [122, 31, 31] },
     })
 
     let y = doc.lastAutoTable.finalY + 10
-    doc.setFontSize(12)
-    doc.text(`Total: ${formatMoney(invoice.total)}`, 150, y)
-    y += 7
+    doc.setFontSize(isRestaurant ? 10 : 12)
+    doc.text(`Total: ${formatMoney(invoice.subtotal)}`, 150, y)
+    y += isRestaurant ? 5 : 7
+    if (isRestaurant) {
+      doc.text(`9%: ${formatMoney(invoice.gst_amount)}`, 150, y)
+      y += 7
+      doc.setFontSize(12)
+      doc.text(`Net Total: ${formatMoney(invoice.total)}`, 150, y)
+      y += 7
+    }
     doc.setFontSize(10)
     doc.text(`Paid: ${formatMoney(invoice.paid_amount)}`, 150, y)
     y += 5
@@ -253,7 +261,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
                 <td>{it.unit}</td>
                 <td>{formatMoney(it.rate)}</td>
                 {hasDiscount && <td>{formatMoney(it.discount)}</td>}
-                <td>{formatMoney(it.amount + (it.gst_applicable ? it.gst_amount : 0))}</td>
+                <td>{formatMoney(it.amount)}</td>
               </tr>
             ))}
           </tbody>
@@ -262,10 +270,22 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         <div className="invoice-totals">
           <table>
             <tbody>
-              <tr style={{ fontWeight: 700 }}>
+              <tr style={{ fontWeight: isRestaurant ? 400 : 700 }}>
                 <td>Total</td>
-                <td>{formatMoney(invoice.total)}</td>
+                <td>{formatMoney(invoice.subtotal)}</td>
               </tr>
+              {isRestaurant && (
+                <>
+                  <tr>
+                    <td>9%</td>
+                    <td>{formatMoney(invoice.gst_amount)}</td>
+                  </tr>
+                  <tr style={{ fontWeight: 700 }}>
+                    <td>Net Total</td>
+                    <td>{formatMoney(invoice.total)}</td>
+                  </tr>
+                </>
+              )}
               <tr>
                 <td>Paid</td>
                 <td>{formatMoney(invoice.paid_amount)}</td>

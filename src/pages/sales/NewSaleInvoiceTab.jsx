@@ -172,9 +172,9 @@ export default function NewSaleInvoiceTab() {
   const filteredCustomers = useMemo(() => customers.filter((c) => c.type === channel), [customers, channel])
   const rate = getRate(date)
   // Not GST-registered: Counter and Home Delivery charge exactly the entered
-  // Price, nothing added. Restaurant still adds a flat surcharge on top (see
-  // lineGst below) but it's folded silently into the line/invoice Total —
-  // no column, no breakout, no wording anywhere.
+  // Price, nothing added, single Total. Restaurant still adds a flat 9%
+  // surcharge, shown as a plain rounded number below the Total (no "Tax"/
+  // "GST" wording, no per-line breakout).
   const isRestaurant = channel === 'Restaurant'
 
   // Products actually offered on the currently selected channel, with any
@@ -291,12 +291,10 @@ export default function NewSaleInvoiceTab() {
     return round2(qty * rateVal - discount)
   }
 
-  function lineGst(line) {
-    return isRestaurant && line.gst_applicable ? round2(lineAmount(line) * (rate / 100)) : 0
-  }
-
   const subtotal = round2(lines.reduce((sum, l) => sum + lineAmount(l), 0))
-  const gstTotal = round2(lines.reduce((sum, l) => sum + lineGst(l), 0))
+  // Restaurant's 9% is charged only on the invoice total, not per line, and
+  // is rounded to a whole number rather than to the cent.
+  const gstTotal = isRestaurant ? Math.round(subtotal * (rate / 100)) : 0
   const grandTotal = round2(subtotal + gstTotal)
 
   const effectivePaid =
@@ -352,7 +350,7 @@ export default function NewSaleInvoiceTab() {
         rate: Number(l.rate) || 0,
         discount: Number(l.discount) || 0,
         gst_applicable: l.gst_applicable,
-        gst_amount: lineGst(l),
+        gst_amount: 0,
         display_name: l.promoFreeFor ? `${baseName || 'Item'} (Free)` : baseName,
       }
     })
@@ -559,7 +557,7 @@ export default function NewSaleInvoiceTab() {
                   onChange={(e) => updateLine(line.key, { discount: e.target.value })}
                 />
               </td>
-              <td>{formatMoney(lineAmount(line) + lineGst(line))}</td>
+              <td>{formatMoney(lineAmount(line))}</td>
               <td>
                 <button type="button" className="btn-secondary" onClick={() => removeLine(line.key)}>
                   ✕
@@ -577,10 +575,22 @@ export default function NewSaleInvoiceTab() {
       <div className="card" style={{ marginTop: '1.25rem', maxWidth: 320 }}>
         <table className="data-table">
           <tbody>
-            <tr style={{ fontWeight: 700 }}>
+            <tr style={{ fontWeight: isRestaurant ? 400 : 700 }}>
               <td>Total</td>
-              <td>{formatMoney(grandTotal)}</td>
+              <td>{formatMoney(subtotal)}</td>
             </tr>
+            {isRestaurant && (
+              <>
+                <tr>
+                  <td>9%</td>
+                  <td>{formatMoney(gstTotal)}</td>
+                </tr>
+                <tr style={{ fontWeight: 700 }}>
+                  <td>Net Total</td>
+                  <td>{formatMoney(grandTotal)}</td>
+                </tr>
+              </>
+            )}
           </tbody>
         </table>
       </div>
