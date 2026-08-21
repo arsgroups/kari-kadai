@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { toISODate, formatMoney } from '../../lib/format'
+import { toISODate } from '../../lib/format'
 import { UNIT_OPTIONS, conversionFactor } from '../../lib/units'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -44,6 +44,8 @@ export default function ProductsTab() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [channelFilters, setChannelFilters] = useState([])
   const [supplierFilter, setSupplierFilter] = useState(false)
+  const [priceEdits, setPriceEdits] = useState({}) // product_id -> new default_selling_price (string)
+  const [savingPrices, setSavingPrices] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -200,6 +202,35 @@ export default function ProductsTab() {
     return null
   }
 
+  function updatePriceEdit(productId, value) {
+    setPriceEdits((prev) => ({ ...prev, [productId]: value }))
+  }
+
+  function discardPriceEdits() {
+    setPriceEdits({})
+  }
+
+  async function savePriceEdits() {
+    setSavingPrices(true)
+    setError('')
+    const results = await Promise.all(
+      Object.entries(priceEdits).map(([productId, value]) =>
+        supabase
+          .from('products')
+          .update({ default_selling_price: value === '' ? null : Number(value) })
+          .eq('id', productId)
+      )
+    )
+    setSavingPrices(false)
+    const failed = results.find((r) => r.error)
+    if (failed) {
+      setError(failed.error.message)
+      return
+    }
+    setPriceEdits({})
+    load()
+  }
+
   async function toggleActive(row) {
     await supabase.from('products').update({ is_active: !row.is_active }).eq('id', row.product_id)
     load()
@@ -272,6 +303,16 @@ export default function ProductsTab() {
         >
           Advanced Search{channelFilters.length > 0 || supplierFilter ? ' (active)' : ''}
         </button>
+        {Object.keys(priceEdits).length > 0 && (
+          <>
+            <button className="btn" disabled={savingPrices} onClick={savePriceEdits}>
+              {savingPrices ? 'Saving…' : `Save Price Changes (${Object.keys(priceEdits).length})`}
+            </button>
+            <button className="btn-secondary" disabled={savingPrices} onClick={discardPriceEdits}>
+              Discard
+            </button>
+          </>
+        )}
       </div>
 
       {showAdvanced && (
@@ -554,7 +595,16 @@ export default function ProductsTab() {
                       {r.current_stock} {r.unit}{' '}
                       {low && <span className="tag tag-danger">Low</span>}
                     </td>
-                    <td>{formatMoney(r.prices?.default_selling_price ?? 0)}</td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        style={{ width: 90 }}
+                        value={r.product_id in priceEdits ? priceEdits[r.product_id] : r.prices?.default_selling_price ?? ''}
+                        onChange={(e) => updatePriceEdit(r.product_id, e.target.value)}
+                      />
+                    </td>
                     <td>
                       <span className={r.is_active ? 'tag tag-success' : 'tag tag-muted'}>
                         {r.is_active ? 'Active' : 'Inactive'}
