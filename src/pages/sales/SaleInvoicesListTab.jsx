@@ -9,7 +9,7 @@ function firstOfMonth() {
   return toISODate(new Date(d.getFullYear(), d.getMonth(), 1))
 }
 
-const emptyFilters = { from: firstOfMonth(), to: toISODate(), channel: '', customer_id: '' }
+const emptyFilters = { from: firstOfMonth(), to: toISODate(), channel: '', customer_id: '', payment_type: '' }
 
 export default function SaleInvoicesListTab() {
   const [rows, setRows] = useState([])
@@ -43,6 +43,7 @@ export default function SaleInvoicesListTab() {
 
     if (filters.channel) query = query.eq('channel', filters.channel)
     if (filters.customer_id) query = query.eq('customer_id', filters.customer_id)
+    if (filters.payment_type) query = query.eq('payment_type', filters.payment_type)
 
     const { data, error } = await query.limit(500)
     if (error) {
@@ -147,6 +148,7 @@ export default function SaleInvoicesListTab() {
   }
 
   const totalAmount = rows.reduce((sum, r) => sum + r.total, 0)
+  const totalOutstanding = rows.reduce((sum, r) => sum + outstandingFor(r), 0)
 
   const exportRows = rows.map((r) => ({
     invoice_number: r.invoice_number,
@@ -193,6 +195,15 @@ export default function SaleInvoicesListTab() {
               ))}
             </select>
           </label>
+          <label>
+            Payment
+            <select value={filters.payment_type} onChange={(e) => setFilters({ ...filters, payment_type: e.target.value })}>
+              <option value="">All</option>
+              <option>Cash</option>
+              <option>Bank</option>
+              <option>Credit</option>
+            </select>
+          </label>
         </div>
       </div>
 
@@ -200,6 +211,10 @@ export default function SaleInvoicesListTab() {
         <div className="tile" style={{ margin: 0 }}>
           <div className="tile-label">Total (filtered)</div>
           <div className="tile-value">{formatMoney(totalAmount)}</div>
+        </div>
+        <div className="tile" style={{ margin: 0 }}>
+          <div className="tile-label">Outstanding (filtered)</div>
+          <div className="tile-value">{formatMoney(totalOutstanding)}</div>
         </div>
         <ExportButtons
           title="Sale Invoices"
