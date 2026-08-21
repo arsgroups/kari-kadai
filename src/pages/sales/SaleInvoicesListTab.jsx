@@ -9,7 +9,14 @@ function firstOfMonth() {
   return toISODate(new Date(d.getFullYear(), d.getMonth(), 1))
 }
 
-const emptyFilters = { from: firstOfMonth(), to: toISODate(), channel: '', customer_id: '', payment_type: '' }
+const emptyFilters = {
+  from: firstOfMonth(),
+  to: toISODate(),
+  channel: '',
+  customer_id: '',
+  payment_type: '',
+  payment_status: '',
+}
 
 export default function SaleInvoicesListTab() {
   const [rows, setRows] = useState([])
@@ -147,10 +154,14 @@ export default function SaleInvoicesListTab() {
     )
   }
 
-  const totalAmount = rows.reduce((sum, r) => sum + r.total, 0)
-  const totalOutstanding = rows.reduce((sum, r) => sum + outstandingFor(r), 0)
+  const filteredRows = filters.payment_status
+    ? rows.filter((r) => paymentStatus(r) === filters.payment_status)
+    : rows
 
-  const exportRows = rows.map((r) => ({
+  const totalAmount = filteredRows.reduce((sum, r) => sum + r.total, 0)
+  const totalOutstanding = filteredRows.reduce((sum, r) => sum + outstandingFor(r), 0)
+
+  const exportRows = filteredRows.map((r) => ({
     invoice_number: r.invoice_number,
     date: formatDate(r.date),
     channel: r.channel,
@@ -202,6 +213,18 @@ export default function SaleInvoicesListTab() {
               <option>Cash</option>
               <option>Bank</option>
               <option>Credit</option>
+            </select>
+          </label>
+          <label>
+            Payment Status
+            <select
+              value={filters.payment_status}
+              onChange={(e) => setFilters({ ...filters, payment_status: e.target.value })}
+            >
+              <option value="">All</option>
+              <option>Paid</option>
+              <option>Partial</option>
+              <option>Pending</option>
             </select>
           </label>
         </div>
@@ -256,7 +279,7 @@ export default function SaleInvoicesListTab() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {filteredRows.map((r) => {
                 const status = paymentStatus(r)
                 const outstanding = outstandingFor(r)
                 return (
@@ -393,7 +416,7 @@ export default function SaleInvoicesListTab() {
                 </Fragment>
                 )
               })}
-              {rows.length === 0 && (
+              {filteredRows.length === 0 && (
                 <tr>
                   <td colSpan={10} className="muted">
                     No sale invoices in this range.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { toISODate } from '../../lib/format'
+import { toISODate, formatMoney } from '../../lib/format'
 import { UNIT_OPTIONS, conversionFactor } from '../../lib/units'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -47,7 +47,7 @@ export default function ProductsTab() {
 
   async function load() {
     setLoading(true)
-    const [{ data, error }, { data: yieldData }, { data: channelData }] = await Promise.all([
+    const [{ data, error }, { data: yieldData }, { data: channelData }, { data: priceData }] = await Promise.all([
       supabase.from('v_current_stock').select('*').order('name'),
       supabase
         .from('yield_configuration_items')
@@ -55,6 +55,7 @@ export default function ProductsTab() {
         .eq('is_active', true)
         .eq('yield_configurations.is_active', true),
       supabase.from('product_channel_config').select('product_id, channel, is_visible'),
+      supabase.from('products').select('id, default_selling_price, restaurant_price, counter_price'),
     ])
     if (error) setError(error.message)
     else {
@@ -68,11 +69,16 @@ export default function ProductsTab() {
           hiddenChannelsByProduct[c.product_id] = [...(hiddenChannelsByProduct[c.product_id] ?? []), c.channel]
         }
       })
+      const pricesByProduct = {}
+      ;(priceData ?? []).forEach((p) => {
+        pricesByProduct[p.id] = p
+      })
       setRows(
         data.map((r) => ({
           ...r,
           cutFrom: parentNameByChild[r.product_id] ?? null,
           hiddenChannels: hiddenChannelsByProduct[r.product_id] ?? [],
+          prices: pricesByProduct[r.product_id] ?? null,
         }))
       )
     }
@@ -515,6 +521,7 @@ export default function ProductsTab() {
                 <th>Item Code</th>
                 <th>Name</th>
                 <th>Current Stock</th>
+                <th>Price</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -547,6 +554,10 @@ export default function ProductsTab() {
                       {r.current_stock} {r.unit}{' '}
                       {low && <span className="tag tag-danger">Low</span>}
                     </td>
+                    <td style={{ fontSize: '0.8rem' }}>
+                      <div>Restaurant: {formatMoney(r.prices?.restaurant_price ?? r.prices?.default_selling_price ?? 0)}</div>
+                      <div>Other: {formatMoney(r.prices?.counter_price ?? r.prices?.default_selling_price ?? 0)}</div>
+                    </td>
                     <td>
                       <span className={r.is_active ? 'tag tag-success' : 'tag tag-muted'}>
                         {r.is_active ? 'Active' : 'Inactive'}
@@ -565,7 +576,7 @@ export default function ProductsTab() {
               })}
               {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted">
+                  <td colSpan={6} className="muted">
                     No items found.
                   </td>
                 </tr>
