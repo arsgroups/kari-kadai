@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
 import ExportButtons from '../../components/ExportButtons'
@@ -27,6 +27,8 @@ export default function OutstandingReportTab() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [sortBy, setSortBy] = useState('amount')
+  const [expandedId, setExpandedId] = useState(null)
+  const [invoicesByCustomer, setInvoicesByCustomer] = useState({})
 
   async function load() {
     setLoading(true)
@@ -69,6 +71,23 @@ export default function OutstandingReportTab() {
   useEffect(() => {
     load()
   }, [])
+
+  async function toggleExpand(customerId) {
+    if (expandedId === customerId) {
+      setExpandedId(null)
+      return
+    }
+    setExpandedId(customerId)
+    if (!invoicesByCustomer[customerId]) {
+      const { data } = await supabase
+        .from('sale_invoices')
+        .select('id, invoice_number, date, channel, total, paid_amount, balance')
+        .eq('customer_id', customerId)
+        .eq('payment_type', 'Credit')
+        .order('date', { ascending: false })
+      setInvoicesByCustomer((prev) => ({ ...prev, [customerId]: data ?? [] }))
+    }
+  }
 
   const sorted = [...rows].sort((a, b) =>
     sortBy === 'amount' ? b.outstanding - a.outstanding : b.ageDays - a.ageDays
@@ -117,6 +136,7 @@ export default function OutstandingReportTab() {
           <table className="data-table">
             <thead>
               <tr>
+                <th></th>
                 <th>Customer</th>
                 <th>Type</th>
                 <th>Outstanding</th>
@@ -125,22 +145,93 @@ export default function OutstandingReportTab() {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((r) => (
-                <tr key={r.customer_id}>
-                  <td>{r.name}</td>
-                  <td>{r.type}</td>
-                  <td>{formatMoney(r.outstanding)}</td>
-                  <td>{r.oldestUnpaidDate ? formatDate(r.oldestUnpaidDate) : '—'}</td>
-                  <td>
-                    <span className={r.ageDays > 30 ? 'tag tag-danger' : r.ageDays > 14 ? 'tag tag-warning' : 'tag tag-muted'}>
-                      {r.ageDays} days
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {sorted.map((r) => {
+                const invoices = invoicesByCustomer[r.customer_id] ?? []
+                const invoiceExportRows = invoices.map((inv) => ({
+                  invoice_number: inv.invoice_number,
+                  date: formatDate(inv.date),
+                  channel: inv.channel,
+                  total: inv.total,
+                  paid: inv.paid_amount,
+                  balance: inv.balance,
+                }))
+                return (
+                <Fragment key={r.customer_id}>
+                  <tr>
+                    <td>
+                      <button className="btn-secondary" onClick={() => toggleExpand(r.customer_id)}>
+                        {expandedId === r.customer_id ? '−' : '+'}
+                      </button>
+                    </td>
+                    <td>{r.name}</td>
+                    <td>{r.type}</td>
+                    <td>{formatMoney(r.outstanding)}</td>
+                    <td>{r.oldestUnpaidDate ? formatDate(r.oldestUnpaidDate) : '—'}</td>
+                    <td>
+                      <span className={r.ageDays > 30 ? 'tag tag-danger' : r.ageDays > 14 ? 'tag tag-warning' : 'tag tag-muted'}>
+                        {r.ageDays} days
+                      </span>
+                    </td>
+                  </tr>
+                  {expandedId === r.customer_id && (
+                    <tr>
+                      <td></td>
+                      <td colSpan={5}>
+                        <div className="toolbar" style={{ marginBottom: '0.5rem' }}>
+                          <ExportButtons
+                            title={`Credit Invoices — ${r.name}`}
+                            filename={`credit_invoices_${r.name.replace(/\s+/g, '_')}`}
+                            columns={[
+                              { key: 'invoice_number', label: 'Invoice #' },
+                              { key: 'date', label: 'Date' },
+                              { key: 'channel', label: 'Channel' },
+                              { key: 'total', label: 'Total', money: true },
+                              { key: 'paid', label: 'Paid', money: true },
+                              { key: 'balance', label: 'Balance', money: true },
+                            ]}
+                            rows={invoiceExportRows}
+                          />
+                        </div>
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>Invoice #</th>
+                              <th>Date</th>
+                              <th>Channel</th>
+                              <th>Total</th>
+                              <th>Paid</th>
+                              <th>Balance</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {invoices.map((inv) => (
+                              <tr key={inv.id}>
+                                <td>{inv.invoice_number}</td>
+                                <td>{formatDate(inv.date)}</td>
+                                <td>{inv.channel}</td>
+                                <td>{formatMoney(inv.total)}</td>
+                                <td>{formatMoney(inv.paid_amount)}</td>
+                                <td>{formatMoney(inv.balance)}</td>
+                              </tr>
+                            ))}
+                            {invoices.length === 0 && (
+                              <tr>
+                                <td colSpan={6} className="muted">
+                                  No credit invoices for this customer.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+                )
+              })}
               {sorted.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted">
+                  <td colSpan={6} className="muted">
                     No outstanding balances — everyone's settled up.
                   </td>
                 </tr>
