@@ -234,6 +234,12 @@ export default function ProductsTab() {
     setSupplierFilter(false)
   }
 
+  // Advanced Search's channel checkboxes double as the price context here:
+  // Restaurant selected on its own shows Restaurant Selling Price; anything
+  // else (Counter/Home Delivery selected, several ticked, or none at all)
+  // shows the Counter/Home Delivery Selling Price.
+  const showRestaurantPrice = channelFilters.length === 1 && channelFilters[0] === 'Restaurant'
+
   const categories = [...new Set(rows.map((r) => r.category).filter(Boolean))]
   const searchTerm = searchQuery.trim().toLowerCase()
   const visibleRows = rows.filter((r) => {
@@ -521,7 +527,7 @@ export default function ProductsTab() {
                 <th>Item Code</th>
                 <th>Name</th>
                 <th>Current Stock</th>
-                <th>Price</th>
+                <th>Price ({showRestaurantPrice ? 'Restaurant' : 'Counter/HD'})</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -554,9 +560,12 @@ export default function ProductsTab() {
                       {r.current_stock} {r.unit}{' '}
                       {low && <span className="tag tag-danger">Low</span>}
                     </td>
-                    <td style={{ fontSize: '0.8rem' }}>
-                      <div>Restaurant: {formatMoney(r.prices?.restaurant_price ?? r.prices?.default_selling_price ?? 0)}</div>
-                      <div>Other: {formatMoney(r.prices?.counter_price ?? r.prices?.default_selling_price ?? 0)}</div>
+                    <td>
+                      {formatMoney(
+                        (showRestaurantPrice ? r.prices?.restaurant_price : r.prices?.counter_price) ??
+                          r.prices?.default_selling_price ??
+                          0
+                      )}
                     </td>
                     <td>
                       <span className={r.is_active ? 'tag tag-success' : 'tag tag-muted'}>
