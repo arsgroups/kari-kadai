@@ -51,7 +51,9 @@ export default function NewSaleInvoiceTab() {
     Promise.all([
       supabase
         .from('products')
-        .select('id, name, unit, sales_unit, default_selling_price, restaurant_price, counter_price, supplier_only')
+        .select(
+          'id, name, unit, sales_unit, default_selling_price, restaurant_price, counter_price, supplier_only, average_cost, default_purchase_price'
+        )
         .eq('is_active', true)
         .order('name'),
       supabase.from('v_current_stock').select('product_id, current_stock'),
@@ -289,6 +291,23 @@ export default function NewSaleInvoiceTab() {
     const rateVal = Number(line.rate) || 0
     const discount = Number(line.discount) || 0
     return round2(qty * rateVal - discount)
+  }
+
+  // Prefers the actual weighted average cost from purchases; falls back to
+  // the item's default purchase price if it's never been bought yet.
+  function costFor(productId) {
+    const product = products.find((p) => p.id === productId)
+    return Number(product?.average_cost) || Number(product?.default_purchase_price) || 0
+  }
+
+  // Warns (but never blocks) if the rate just typed in is below cost —
+  // cashier clicks OK and can still save the invoice at that price.
+  function checkBelowCost(line) {
+    const cost = costFor(line.product_id)
+    const newRate = Number(line.rate)
+    if (cost > 0 && newRate > 0 && newRate < cost) {
+      window.alert(`Selling below cost: cost is ${formatMoney(cost)}, selling at ${formatMoney(newRate)}.`)
+    }
   }
 
   const subtotal = round2(lines.reduce((sum, l) => sum + lineAmount(l), 0))
@@ -539,6 +558,7 @@ export default function NewSaleInvoiceTab() {
                   value={line.rate}
                   disabled={isFreeLine}
                   onChange={(e) => updateLine(line.key, { rate: e.target.value })}
+                  onBlur={() => !isFreeLine && checkBelowCost(line)}
                 />
               </td>
               <td>
