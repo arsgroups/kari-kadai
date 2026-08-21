@@ -29,6 +29,7 @@ export default function NewPurchaseInvoiceTab() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [lastPurchasePrices, setLastPurchasePrices] = useState({}) // product_id -> { rate } | null
 
   useEffect(() => {
     supabase
@@ -64,7 +65,7 @@ export default function NewPurchaseInvoiceTab() {
     setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)))
   }
 
-  function handleProductChange(key, productId) {
+  async function handleProductChange(key, productId) {
     const product = products.find((p) => p.id === productId)
     updateLine(key, {
       product_id: productId,
@@ -72,6 +73,27 @@ export default function NewPurchaseInvoiceTab() {
       rate: product?.default_purchase_price ?? '',
       gst_applicable: supplier ? supplier.gst_registered : true,
     })
+    if (productId && !(productId in lastPurchasePrices)) {
+      const { data } = await supabase
+        .from('purchase_invoice_items')
+        .select('rate, purchase_invoices!inner(date)')
+        .eq('product_id', productId)
+        .order('date', { foreignTable: 'purchase_invoices', ascending: false })
+        .limit(1)
+      setLastPurchasePrices((prev) => ({ ...prev, [productId]: data?.[0] ?? null }))
+    }
+  }
+
+  // Warns (but never blocks) if the rate just typed in is higher than the
+  // last time this item was purchased — cashier clicks OK and carries on.
+  function checkPriceIncrease(line) {
+    const last = lastPurchasePrices[line.product_id]
+    const newRate = Number(line.rate)
+    if (last && newRate > Number(last.rate)) {
+      window.alert(
+        `Price increased: last purchased at ${formatMoney(last.rate)}, now entering ${formatMoney(newRate)}.`
+      )
+    }
   }
 
   function addLine() {
@@ -250,6 +272,7 @@ export default function NewPurchaseInvoiceTab() {
                   style={{ width: 90 }}
                   value={line.rate}
                   onChange={(e) => updateLine(line.key, { rate: e.target.value })}
+                  onBlur={() => checkPriceIncrease(line)}
                 />
               </td>
               <td>
