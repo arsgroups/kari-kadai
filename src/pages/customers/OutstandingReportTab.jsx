@@ -148,6 +148,7 @@ export default function OutstandingReportTab() {
               {sorted.map((r) => {
                 const invoices = invoicesByCustomer[r.customer_id] ?? []
                 const invoiceExportRows = invoices.map((inv) => ({
+                  customer: r.name,
                   invoice_number: inv.invoice_number,
                   date: formatDate(inv.date),
                   channel: inv.channel,
@@ -182,6 +183,7 @@ export default function OutstandingReportTab() {
                             title={`Credit Invoices — ${r.name}`}
                             filename={`credit_invoices_${r.name.replace(/\s+/g, '_')}`}
                             columns={[
+                              { key: 'customer', label: 'Customer' },
                               { key: 'invoice_number', label: 'Invoice #' },
                               { key: 'date', label: 'Date' },
                               { key: 'channel', label: 'Channel' },
@@ -195,6 +197,7 @@ export default function OutstandingReportTab() {
                         <table className="data-table">
                           <thead>
                             <tr>
+                              <th>Customer</th>
                               <th>Invoice #</th>
                               <th>Date</th>
                               <th>Channel</th>
@@ -206,6 +209,7 @@ export default function OutstandingReportTab() {
                           <tbody>
                             {invoices.map((inv) => (
                               <tr key={inv.id}>
+                                <td>{r.name}</td>
                                 <td>{inv.invoice_number}</td>
                                 <td>{formatDate(inv.date)}</td>
                                 <td>{inv.channel}</td>
@@ -216,7 +220,7 @@ export default function OutstandingReportTab() {
                             ))}
                             {invoices.length === 0 && (
                               <tr>
-                                <td colSpan={6} className="muted">
+                                <td colSpan={7} className="muted">
                                   No credit invoices for this customer.
                                 </td>
                               </tr>
