@@ -31,9 +31,21 @@ export default function SaleInvoicesListTab() {
   const [payingId, setPayingId] = useState(null)
   const [paymentForm, setPaymentForm] = useState({ amount: '', payment_type: 'Cash', date: toISODate() })
   const [payingSaving, setPayingSaving] = useState(false)
+  const [costByProduct, setCostByProduct] = useState({})
+  const [belowCostInvoices, setBelowCostInvoices] = useState(new Set())
 
   useEffect(() => {
     supabase.from('customers').select('id, name').order('name').then(({ data }) => setCustomers(data ?? []))
+    supabase
+      .from('products')
+      .select('id, average_cost, default_purchase_price')
+      .then(({ data }) => {
+        const map = {}
+        ;(data ?? []).forEach((p) => {
+          map[p.id] = Number(p.average_cost) || Number(p.default_purchase_price) || 0
+        })
+        setCostByProduct(map)
+      })
   }, [])
 
   async function load() {
@@ -62,17 +74,25 @@ export default function SaleInvoicesListTab() {
 
     const invoiceIds = (data ?? []).map((r) => r.id)
     if (invoiceIds.length) {
-      const { data: paymentRows } = await supabase
-        .from('customer_payments')
-        .select('invoice_id, amount')
-        .in('invoice_id', invoiceIds)
+      const [{ data: paymentRows }, { data: itemRows }] = await Promise.all([
+        supabase.from('customer_payments').select('invoice_id, amount').in('invoice_id', invoiceIds),
+        supabase.from('sale_invoice_items').select('sale_invoice_id, product_id, rate').in('sale_invoice_id', invoiceIds),
+      ])
       const paidMap = {}
       ;(paymentRows ?? []).forEach((p) => {
         paidMap[p.invoice_id] = (paidMap[p.invoice_id] ?? 0) + p.amount
       })
       setExtraPaidByInvoice(paidMap)
+
+      const belowCost = new Set()
+      ;(itemRows ?? []).forEach((it) => {
+        const cost = costByProduct[it.product_id] ?? 0
+        if (cost > 0 && Number(it.rate) > 0 && Number(it.rate) < cost) belowCost.add(it.sale_invoice_id)
+      })
+      setBelowCostInvoices(belowCost)
     } else {
       setExtraPaidByInvoice({})
+      setBelowCostInvoices(new Set())
     }
     setLoading(false)
   }
@@ -80,7 +100,7 @@ export default function SaleInvoicesListTab() {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters])
+  }, [filters, costByProduct])
 
   async function toggleExpand(invoiceId) {
     if (expandedId === invoiceId) {
@@ -282,15 +302,24 @@ export default function SaleInvoicesListTab() {
               {filteredRows.map((r) => {
                 const status = paymentStatus(r)
                 const outstanding = outstandingFor(r)
+                const belowCost = belowCostInvoices.has(r.id)
                 return (
                 <Fragment key={r.id}>
-                  <tr>
+                  <tr style={belowCost ? { background: '#fbe9e7' } : undefined}>
                     <td>
                       <button className="btn-secondary" onClick={() => toggleExpand(r.id)}>
                         {expandedId === r.id ? '−' : '+'}
                       </button>
                     </td>
-                    <td>{r.invoice_number}</td>
+                    <td>
+                      {r.invoice_number}
+                      {belowCost && (
+                        <>
+                          {' '}
+                          <span className="tag tag-danger">Below Cost</span>
+                        </>
+                      )}
+                    </td>
                     <td>{formatDate(r.date)}</td>
                     <td>{r.channel}</td>
                     <td>{r.customers?.name ?? '—'}</td>
