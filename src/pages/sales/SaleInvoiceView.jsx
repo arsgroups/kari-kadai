@@ -45,6 +45,8 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   const [deleteError, setDeleteError] = useState('')
   const [editing, setEditing] = useState(false)
   const [editLines, setEditLines] = useState([])
+  const [editProducts, setEditProducts] = useState([]) // channel-visible products, for the Add Line picker
+  const [newLineProduct, setNewLineProduct] = useState('')
   const [productFactors, setProductFactors] = useState({}) // product_id -> sales_to_inventory_factor
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState('')
@@ -164,27 +166,68 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     setEditError('')
     setEditLines(
       items.map((it) => ({
+        key: it.id,
         itemId: it.id,
         product_id: it.product_id,
+        display_name: it.display_name || it.products?.name || '',
+        unit: it.unit,
         quantity: it.quantity,
         rate: it.rate,
         discount: it.discount,
       }))
     )
-    const productIds = [...new Set(items.map((it) => it.product_id).filter(Boolean))]
-    if (productIds.length) {
-      const { data } = await supabase.from('products').select('id, sales_to_inventory_factor').in('id', productIds)
-      const map = {}
-      ;(data ?? []).forEach((p) => {
-        map[p.id] = p.sales_to_inventory_factor
-      })
-      setProductFactors(map)
-    }
+    setNewLineProduct('')
+    const [{ data: productData }, { data: channelData }] = await Promise.all([
+      supabase
+        .from('products')
+        .select('id, name, sales_unit, default_selling_price, restaurant_price, counter_price, sales_to_inventory_factor')
+        .eq('is_active', true)
+        .order('name'),
+      supabase.from('product_channel_config').select('product_id, channel, display_name, is_visible'),
+    ])
+    const channelMap = {}
+    ;(channelData ?? []).forEach((row) => {
+      if (!channelMap[row.product_id]) channelMap[row.product_id] = {}
+      channelMap[row.product_id][row.channel] = { display_name: row.display_name, is_visible: row.is_visible }
+    })
+    const products = (productData ?? [])
+      .filter((p) => channelMap[p.id]?.[invoice.channel]?.is_visible !== false)
+      .map((p) => ({ ...p, channelName: channelMap[p.id]?.[invoice.channel]?.display_name || p.name }))
+    setEditProducts(products)
+    const factorMap = {}
+    ;(productData ?? []).forEach((p) => {
+      factorMap[p.id] = p.sales_to_inventory_factor
+    })
+    setProductFactors(factorMap)
     setEditing(true)
   }
 
-  function updateEditLine(itemId, patch) {
-    setEditLines((prev) => prev.map((l) => (l.itemId === itemId ? { ...l, ...patch } : l)))
+  function updateEditLine(key, patch) {
+    setEditLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)))
+  }
+
+  function removeEditLine(key) {
+    setEditLines((prev) => prev.filter((l) => l.key !== key))
+  }
+
+  function addEditLine() {
+    const product = editProducts.find((p) => p.id === newLineProduct)
+    if (!product) return
+    const channelPrice = invoice.channel === 'Restaurant' ? product.restaurant_price : product.counter_price
+    setEditLines((prev) => [
+      ...prev,
+      {
+        key: crypto.randomUUID(),
+        itemId: null,
+        product_id: product.id,
+        display_name: product.channelName,
+        unit: product.sales_unit,
+        quantity: 1,
+        rate: channelPrice ?? product.default_selling_price ?? 0,
+        discount: 0,
+      },
+    ])
+    setNewLineProduct('')
   }
 
   function editLineAmount(line) {
@@ -196,13 +239,39 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
   async function handleSaveEdit() {
     setEditError('')
+    if (editLines.length === 0) {
+      setEditError('Invoice must have at least one item line.')
+      return
+    }
     if (editLines.some((l) => Number(l.quantity) <= 0)) {
       setEditError('Quantity must be greater than 0 for every line.')
       return
     }
     setEditSaving(true)
 
-    for (const line of editLines) {
+    const keptItemIds = new Set(editLines.filter((l) => l.itemId).map((l) => l.itemId))
+    const removedItems = items.filter((it) => !keptItemIds.has(it.id))
+
+    for (const it of removedItems) {
+      const { error: stockErr } = await supabase
+        .from('stock_movements')
+        .delete()
+        .eq('reference_type', 'sale')
+        .eq('reference_id', it.id)
+      if (stockErr) {
+        setEditSaving(false)
+        setEditError(stockErr.message)
+        return
+      }
+      const { error: delErr } = await supabase.from('sale_invoice_items').delete().eq('id', it.id)
+      if (delErr) {
+        setEditSaving(false)
+        setEditError(delErr.message)
+        return
+      }
+    }
+
+    for (const line of editLines.filter((l) => l.itemId)) {
       const original = items.find((it) => it.id === line.itemId)
       const newQty = Number(line.quantity)
       const newRate = Number(line.rate) || 0
@@ -233,6 +302,27 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
           setEditError(stockErr.message)
           return
         }
+      }
+    }
+
+    const newLines = editLines.filter((l) => !l.itemId)
+    if (newLines.length) {
+      const rows = newLines.map((l) => ({
+        sale_invoice_id: invoiceId,
+        product_id: l.product_id,
+        quantity: Number(l.quantity),
+        unit: l.unit || null,
+        rate: Number(l.rate) || 0,
+        discount: Number(l.discount) || 0,
+        gst_applicable: true,
+        gst_amount: 0,
+        display_name: l.display_name || null,
+      }))
+      const { error: insErr } = await supabase.from('sale_invoice_items').insert(rows)
+      if (insErr) {
+        setEditSaving(false)
+        setEditError(insErr.message)
+        return
       }
     }
 
@@ -329,8 +419,9 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         <div className="card no-print">
           <h3>Edit Invoice {invoice.invoice_number}</h3>
           <p className="muted" style={{ fontSize: '0.85rem' }}>
-            Adjust quantity and price for each line. Stock is adjusted to match the new quantity, and the
-            invoice total recalculates accordingly.
+            Adjust quantity and price, add a forgotten item, or remove one. Stock is adjusted to match
+            (restored on removal, corrected on quantity change), and the invoice total recalculates
+            accordingly.
           </p>
           <table className="data-table">
             <thead>
@@ -341,42 +432,66 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
                 <th>Price</th>
                 <th>Discount</th>
                 <th>Total</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {editLines.map((line) => {
-                const original = items.find((it) => it.id === line.itemId)
-                return (
-                  <tr key={line.itemId}>
-                    <td>{original?.display_name || original?.products?.name || '—'}</td>
-                    <td>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        style={{ width: 80 }}
-                        value={line.quantity}
-                        onChange={(e) => updateEditLine(line.itemId, { quantity: e.target.value })}
-                      />
-                    </td>
-                    <td>{original?.unit}</td>
-                    <td>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        style={{ width: 90 }}
-                        value={line.rate}
-                        onChange={(e) => updateEditLine(line.itemId, { rate: e.target.value })}
-                      />
-                    </td>
-                    <td>{formatMoney(line.discount)}</td>
-                    <td>{formatMoney(editLineAmount(line))}</td>
-                  </tr>
-                )
-              })}
+              {editLines.map((line) => (
+                <tr key={line.key}>
+                  <td>{line.display_name || '—'}</td>
+                  <td>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      style={{ width: 80 }}
+                      value={line.quantity}
+                      onChange={(e) => updateEditLine(line.key, { quantity: e.target.value })}
+                    />
+                  </td>
+                  <td>{line.unit}</td>
+                  <td>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      style={{ width: 90 }}
+                      value={line.rate}
+                      onChange={(e) => updateEditLine(line.key, { rate: e.target.value })}
+                    />
+                  </td>
+                  <td>{formatMoney(line.discount)}</td>
+                  <td>{formatMoney(editLineAmount(line))}</td>
+                  <td>
+                    <button type="button" className="btn-secondary" onClick={() => removeEditLine(line.key)}>
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {editLines.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="muted">
+                    No items — add one below.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+
+          <div className="toolbar" style={{ marginTop: '0.75rem' }}>
+            <select value={newLineProduct} onChange={(e) => setNewLineProduct(e.target.value)}>
+              <option value="">Select item to add…</option>
+              {editProducts.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.channelName}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="btn-secondary" disabled={!newLineProduct} onClick={addEditLine}>
+              + Add Line
+            </button>
+          </div>
 
           <div className="toolbar" style={{ marginTop: '1rem' }}>
             <button className="btn" disabled={editSaving} onClick={handleSaveEdit}>
