@@ -845,7 +845,7 @@ declare
 begin
   actor := coalesce(auth.jwt() ->> 'email', auth.uid()::text, 'system');
   row_data := to_jsonb(coalesce(new, old));
-  ref := coalesce(row_data->>'invoice_number', row_data->>'name', row_data->>'date');
+  ref := coalesce(row_data->>'invoice_number', row_data->>'return_number', row_data->>'name', row_data->>'date');
 
   insert into audit_log (user_email, action)
   values (
@@ -860,6 +860,10 @@ $$ language plpgsql security definer;
 drop trigger if exists audit_sale_invoices on sale_invoices;
 create trigger audit_sale_invoices after insert or delete on sale_invoices
   for each row execute function log_audit_event('Sale Invoice');
+
+drop trigger if exists audit_sale_returns on sale_returns;
+create trigger audit_sale_returns after insert or delete on sale_returns
+  for each row execute function log_audit_event('Sales Return');
 
 drop trigger if exists audit_purchase_invoices on purchase_invoices;
 create trigger audit_purchase_invoices after insert or delete on purchase_invoices

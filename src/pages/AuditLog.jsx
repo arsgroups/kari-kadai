@@ -30,8 +30,8 @@ export default function AuditLog() {
     <div className="page">
       <h1>Audit Log</h1>
       <p className="muted" style={{ fontSize: '0.85rem' }}>
-        Automatic record of who did what — invoices, payments, item/customer/supplier changes, promotions,
-        role changes, and daily closings. Most recent 300 entries.
+        Automatic record of who did what — invoices, sales returns, payments, item/customer/supplier changes,
+        promotions, role changes, and daily closings. Most recent 300 entries.
       </p>
 
       <div className="card">
