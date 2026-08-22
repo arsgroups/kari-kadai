@@ -1,6 +1,3 @@
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
-import * as XLSX from 'xlsx'
 import { COMPANY } from './companyInfo'
 import { formatMoney } from './format'
 
@@ -12,7 +9,13 @@ function cellValue(row, column) {
 
 // columns: [{ key, label, money? }]  rows: [{ ...values }] — mark a column
 // `money: true` so its values print/export with the S$ symbol.
-export function exportToPDF({ title, columns, rows, filename }) {
+// jspdf/jspdf-autotable/xlsx are only fetched when an export is actually
+// triggered, instead of bloating every page's initial bundle.
+export async function exportToPDF({ title, columns, rows, filename }) {
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ])
   const doc = new jsPDF()
   doc.setFontSize(12)
   doc.text(COMPANY.name, 14, 15)
@@ -32,7 +35,8 @@ export function exportToPDF({ title, columns, rows, filename }) {
   doc.save(`${filename}.pdf`)
 }
 
-export function exportToExcel({ columns, rows, filename }) {
+export async function exportToExcel({ columns, rows, filename }) {
+  const XLSX = await import('xlsx')
   const data = rows.map((r) => {
     const obj = {}
     columns.forEach((c) => {

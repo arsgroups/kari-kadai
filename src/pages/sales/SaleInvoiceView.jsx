@@ -3,8 +3,6 @@ import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney } from '../../lib/format'
 import { COMPANY } from '../../lib/companyInfo'
 import invoiceHeaderImg from '../../assets/invoice-header.jpg'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 import { useAuth } from '../../contexts/AuthContext'
 
 // Fetches an image (bundled asset or a configured Storage URL) and resolves
@@ -77,6 +75,10 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   async function downloadPdf() {
     if (!invoice) return
     const showDiscount = items.some((it) => Number(it.discount) > 0)
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ])
     const doc = new jsPDF()
 
     // Fit the header to the usable A4 width (210mm - 2*14mm margin), at

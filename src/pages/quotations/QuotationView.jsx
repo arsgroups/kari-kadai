@@ -3,8 +3,6 @@ import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
 import { COMPANY } from '../../lib/companyInfo'
 import invoiceHeaderImg from '../../assets/invoice-header.jpg'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 import { useAuth } from '../../contexts/AuthContext'
 
 const VALID_DAYS = 10
@@ -82,6 +80,10 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
 
   async function downloadPdf() {
     if (!quotation) return
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ])
     const doc = new jsPDF()
 
     const bannerWidth = 182

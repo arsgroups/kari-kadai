@@ -3,8 +3,6 @@ import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney } from '../../lib/format'
 import { COMPANY } from '../../lib/companyInfo'
 import { round2 } from '../../lib/gst'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 
 export default function DailyClosingReport({ date, operatorEmail, onClose }) {
   const [loading, setLoading] = useState(true)
@@ -94,8 +92,12 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     setLoading(false)
   }
 
-  function downloadPdf() {
+  async function downloadPdf() {
     if (!data) return
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ])
     const doc = new jsPDF()
     doc.setFontSize(16)
     doc.text(COMPANY.name, 14, 18)
