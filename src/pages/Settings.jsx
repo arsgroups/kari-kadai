@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { formatDate } from '../lib/format'
 import UserRolesPanel from './settings/UserRolesPanel'
+import HistoricalDataEntryPanel from './settings/HistoricalDataEntryPanel'
 
 // supabase-js's functions.invoke() collapses a non-2xx response into a generic
 // "Edge Function returned a non-2xx status code" message — the actual error
@@ -154,6 +155,8 @@ export default function Settings() {
       <h1>Settings</h1>
 
       <UserRolesPanel />
+
+      <HistoricalDataEntryPanel />
 
       <div className="card">
         <h3>Invoice Branding</h3>
