@@ -149,9 +149,6 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     doc.text(`Balance: ${formatMoney(invoice.balance)}`, 150, y)
     y += 6
 
-    doc.setFontSize(11)
-    doc.text('Thank you for your business!', 14, y)
-
     if (footerImageUrl) {
       const footerInfo = await loadImageInfo(footerImageUrl)
       const footerWidth = 182
@@ -597,8 +594,6 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         )}
 
         <div className="invoice-footer">
-          <p>Thank you for your business!</p>
-          <div className="invoice-signature">Signature: ______________________</div>
           {footerImageUrl && <img src={footerImageUrl} alt="" className="invoice-banner" style={{ marginTop: '1rem' }} />}
         </div>
       </div>
