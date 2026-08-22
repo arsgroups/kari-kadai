@@ -71,9 +71,9 @@ create table if not exists stock_movements (
   id uuid primary key default gen_random_uuid(),
   product_id uuid not null references products(id) on delete cascade,
   date date not null default current_date,
-  movement_type text not null check (movement_type in ('opening','purchase','sale','wastage','adjustment','processing')),
+  movement_type text not null check (movement_type in ('opening','purchase','sale','wastage','adjustment','processing','sales_return')),
   quantity numeric not null, -- positive = stock in, negative = stock out
-  reference_type text check (reference_type in ('sale','purchase','manual')),
+  reference_type text check (reference_type in ('sale','purchase','manual','sales_return')),
   reference_id uuid,
   note text,
   created_at timestamptz not null default now()
