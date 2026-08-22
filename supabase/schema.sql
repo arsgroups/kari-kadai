@@ -858,7 +858,7 @@ end;
 $$ language plpgsql security definer;
 
 drop trigger if exists audit_sale_invoices on sale_invoices;
-create trigger audit_sale_invoices after insert or delete on sale_invoices
+create trigger audit_sale_invoices after insert or update or delete on sale_invoices
   for each row execute function log_audit_event('Sale Invoice');
 
 drop trigger if exists audit_sale_returns on sale_returns;

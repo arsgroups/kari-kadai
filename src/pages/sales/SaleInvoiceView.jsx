@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney } from '../../lib/format'
+import { fetchRateHistory, buildRateResolver, round2 } from '../../lib/gst'
 import { COMPANY } from '../../lib/companyInfo'
 import invoiceHeaderImg from '../../assets/invoice-header.jpg'
 import { useAuth } from '../../contexts/AuthContext'
@@ -42,6 +43,11 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [editLines, setEditLines] = useState([])
+  const [productFactors, setProductFactors] = useState({}) // product_id -> sales_to_inventory_factor
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState('')
 
   useEffect(() => {
     load()
@@ -154,6 +160,105 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     doc.save(`${invoice.invoice_number}.pdf`)
   }
 
+  async function startEdit() {
+    setEditError('')
+    setEditLines(
+      items.map((it) => ({
+        itemId: it.id,
+        product_id: it.product_id,
+        quantity: it.quantity,
+        rate: it.rate,
+        discount: it.discount,
+      }))
+    )
+    const productIds = [...new Set(items.map((it) => it.product_id).filter(Boolean))]
+    if (productIds.length) {
+      const { data } = await supabase.from('products').select('id, sales_to_inventory_factor').in('id', productIds)
+      const map = {}
+      ;(data ?? []).forEach((p) => {
+        map[p.id] = p.sales_to_inventory_factor
+      })
+      setProductFactors(map)
+    }
+    setEditing(true)
+  }
+
+  function updateEditLine(itemId, patch) {
+    setEditLines((prev) => prev.map((l) => (l.itemId === itemId ? { ...l, ...patch } : l)))
+  }
+
+  function editLineAmount(line) {
+    const qty = Number(line.quantity) || 0
+    const rate = Number(line.rate) || 0
+    const discount = Number(line.discount) || 0
+    return round2(qty * rate - discount)
+  }
+
+  async function handleSaveEdit() {
+    setEditError('')
+    if (editLines.some((l) => Number(l.quantity) <= 0)) {
+      setEditError('Quantity must be greater than 0 for every line.')
+      return
+    }
+    setEditSaving(true)
+
+    for (const line of editLines) {
+      const original = items.find((it) => it.id === line.itemId)
+      const newQty = Number(line.quantity)
+      const newRate = Number(line.rate) || 0
+      const qtyChanged = newQty !== Number(original.quantity)
+      const rateChanged = newRate !== Number(original.rate)
+
+      if (!qtyChanged && !rateChanged) continue
+
+      const { error: updErr } = await supabase
+        .from('sale_invoice_items')
+        .update({ quantity: newQty, rate: newRate })
+        .eq('id', line.itemId)
+      if (updErr) {
+        setEditSaving(false)
+        setEditError(updErr.message)
+        return
+      }
+
+      if (qtyChanged) {
+        const factor = productFactors[original.product_id] ?? 1
+        const { error: stockErr } = await supabase
+          .from('stock_movements')
+          .update({ quantity: -Math.abs(newQty) * factor })
+          .eq('reference_type', 'sale')
+          .eq('reference_id', line.itemId)
+        if (stockErr) {
+          setEditSaving(false)
+          setEditError(stockErr.message)
+          return
+        }
+      }
+    }
+
+    const newSubtotal = round2(editLines.reduce((sum, l) => sum + editLineAmount(l), 0))
+    let newGstAmount = 0
+    if (invoice.channel === 'Restaurant') {
+      const rates = await fetchRateHistory()
+      const rate = buildRateResolver(rates)(invoice.date)
+      newGstAmount = Math.round(newSubtotal * (rate / 100))
+    }
+
+    const { error: invErr } = await supabase
+      .from('sale_invoices')
+      .update({ subtotal: newSubtotal, gst_amount: newGstAmount })
+      .eq('id', invoiceId)
+
+    setEditSaving(false)
+    if (invErr) {
+      setEditError(invErr.message)
+      return
+    }
+
+    setEditing(false)
+    load()
+  }
+
   async function handleDelete() {
     if (!window.confirm(`Delete invoice ${invoice.invoice_number}? This will restore the stock it deducted and cannot be undone.`))
       return
@@ -202,6 +307,11 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         <button className="btn-secondary" onClick={downloadPdf}>
           Download PDF
         </button>
+        {!editing && (
+          <button className="btn-secondary" onClick={startEdit}>
+            Edit Invoice
+          </button>
+        )}
         {isAdmin && (
           <button className="btn-danger" disabled={deleting} onClick={handleDelete}>
             {deleting ? 'Deleting…' : 'Delete Invoice'}
@@ -215,7 +325,72 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
       </div>
       {deleteError && <div className="inline-error no-print">{deleteError}</div>}
 
-      <div className="invoice-sheet">
+      {editing && (
+        <div className="card no-print">
+          <h3>Edit Invoice {invoice.invoice_number}</h3>
+          <p className="muted" style={{ fontSize: '0.85rem' }}>
+            Adjust quantity and price for each line. Stock is adjusted to match the new quantity, and the
+            invoice total recalculates accordingly.
+          </p>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Unit</th>
+                <th>Price</th>
+                <th>Discount</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {editLines.map((line) => {
+                const original = items.find((it) => it.id === line.itemId)
+                return (
+                  <tr key={line.itemId}>
+                    <td>{original?.display_name || original?.products?.name || '—'}</td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        style={{ width: 80 }}
+                        value={line.quantity}
+                        onChange={(e) => updateEditLine(line.itemId, { quantity: e.target.value })}
+                      />
+                    </td>
+                    <td>{original?.unit}</td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        style={{ width: 90 }}
+                        value={line.rate}
+                        onChange={(e) => updateEditLine(line.itemId, { rate: e.target.value })}
+                      />
+                    </td>
+                    <td>{formatMoney(line.discount)}</td>
+                    <td>{formatMoney(editLineAmount(line))}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+
+          <div className="toolbar" style={{ marginTop: '1rem' }}>
+            <button className="btn" disabled={editSaving} onClick={handleSaveEdit}>
+              {editSaving ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button className="btn-secondary" disabled={editSaving} onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </div>
+          {editError && <div className="inline-error">{editError}</div>}
+        </div>
+      )}
+
+      <div className="invoice-sheet" style={editing ? { display: 'none' } : undefined}>
         <img src={headerImageUrl} alt={COMPANY.name} className="invoice-banner" />
 
         <div className="invoice-meta-row">
