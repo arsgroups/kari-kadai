@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { toISODate } from '../../lib/format'
+import { round2 } from '../../lib/gst'
 import { UNIT_OPTIONS, conversionFactor } from '../../lib/units'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -46,6 +47,8 @@ export default function ProductsTab() {
   const [supplierFilter, setSupplierFilter] = useState(false)
   const [priceEdits, setPriceEdits] = useState({}) // product_id -> new default_selling_price (string)
   const [savingPrices, setSavingPrices] = useState(false)
+  const [stockEdits, setStockEdits] = useState({}) // product_id -> new current stock quantity (string)
+  const [savingStock, setSavingStock] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -231,6 +234,47 @@ export default function ProductsTab() {
     load()
   }
 
+  function updateStockEdit(productId, value) {
+    setStockEdits((prev) => ({ ...prev, [productId]: value }))
+  }
+
+  function discardStockEdits() {
+    setStockEdits({})
+  }
+
+  // Sets current stock to exactly what's typed, via a single 'adjustment'
+  // stock movement for the delta -- not a separate "opening stock" field,
+  // so purchases/sales continue moving stock from here as normal.
+  async function saveStockEdits() {
+    setSavingStock(true)
+    setError('')
+    const today = toISODate()
+    const results = await Promise.all(
+      Object.entries(stockEdits).map(([productId, value]) => {
+        const row = rows.find((r) => r.product_id === productId)
+        const target = value === '' ? 0 : Number(value)
+        const delta = round2(target - (row?.current_stock ?? 0))
+        if (delta === 0) return Promise.resolve({ error: null })
+        return supabase.from('stock_movements').insert({
+          date: today,
+          product_id: productId,
+          movement_type: 'adjustment',
+          quantity: delta,
+          reference_type: 'manual',
+          note: 'Bulk stock adjustment (Inventory table)',
+        })
+      })
+    )
+    setSavingStock(false)
+    const failed = results.find((r) => r.error)
+    if (failed) {
+      setError(failed.error.message)
+      return
+    }
+    setStockEdits({})
+    load()
+  }
+
   async function toggleActive(row) {
     await supabase.from('products').update({ is_active: !row.is_active }).eq('id', row.product_id)
     load()
@@ -309,6 +353,16 @@ export default function ProductsTab() {
               {savingPrices ? 'Saving…' : `Save Price Changes (${Object.keys(priceEdits).length})`}
             </button>
             <button className="btn-secondary" disabled={savingPrices} onClick={discardPriceEdits}>
+              Discard
+            </button>
+          </>
+        )}
+        {Object.keys(stockEdits).length > 0 && (
+          <>
+            <button className="btn" disabled={savingStock} onClick={saveStockEdits}>
+              {savingStock ? 'Saving…' : `Save Stock Changes (${Object.keys(stockEdits).length})`}
+            </button>
+            <button className="btn-secondary" disabled={savingStock} onClick={discardStockEdits}>
               Discard
             </button>
           </>
@@ -553,6 +607,12 @@ export default function ProductsTab() {
       )}
 
       <div className="card">
+        <p className="muted" style={{ fontSize: '0.8rem', marginTop: 0 }}>
+          Current Stock is editable directly — type the actual quantity on hand and Save Stock Changes;
+          it's recorded as a single adjustment entry, so purchases and sales continue to move stock
+          normally from whatever you set. (Items cut from another item aren't editable here — their stock
+          always derives from the parent item.)
+        </p>
         {loading ? (
           <p className="muted">Loading…</p>
         ) : (
@@ -592,7 +652,23 @@ export default function ProductsTab() {
                       )}
                     </td>
                     <td>
-                      {r.current_stock} {r.unit}{' '}
+                      {r.cutFrom ? (
+                        <>
+                          {r.current_stock} {r.unit}
+                        </>
+                      ) : (
+                        <>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            style={{ width: 80 }}
+                            value={r.product_id in stockEdits ? stockEdits[r.product_id] : r.current_stock}
+                            onChange={(e) => updateStockEdit(r.product_id, e.target.value)}
+                          />{' '}
+                          {r.unit}
+                        </>
+                      )}{' '}
                       {low && <span className="tag tag-danger">Low</span>}
                     </td>
                     <td>
