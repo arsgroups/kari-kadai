@@ -25,6 +25,7 @@ export default function NewSaleInvoiceTab() {
   const [getRate, setGetRate] = useState(() => () => 9)
   const [customerPrices, setCustomerPrices] = useState({}) // product_id -> price
   const [promotions, setPromotions] = useState([])
+  const [promoBuyProducts, setPromoBuyProducts] = useState({}) // promotion_id -> [product_id, ...]
 
   const [channel, setChannel] = useState('Counter')
   const [customerId, setCustomerId] = useState('')
@@ -64,8 +65,16 @@ export default function NewSaleInvoiceTab() {
         .eq('yield_configurations.is_active', true),
       supabase.from('product_channel_config').select('product_id, channel, display_name, is_visible'),
       supabase.from('promotions').select('*').eq('is_active', true),
-    ]).then(([{ data: productData }, { data: stockData }, { data: yieldData }, { data: channelData }, { data: promoData }]) => {
+      supabase.from('promotion_products').select('promotion_id, product_id'),
+    ]).then(
+      ([{ data: productData }, { data: stockData }, { data: yieldData }, { data: channelData }, { data: promoData }, { data: promoBuyRows }]) => {
       setPromotions(promoData ?? [])
+      const buyProductsMap = {}
+      ;(promoBuyRows ?? []).forEach((row) => {
+        if (!buyProductsMap[row.promotion_id]) buyProductsMap[row.promotion_id] = []
+        buyProductsMap[row.promotion_id].push(row.product_id)
+      })
+      setPromoBuyProducts(buyProductsMap)
       const channelMap = {}
       ;(channelData ?? []).forEach((row) => {
         if (!channelMap[row.product_id]) channelMap[row.product_id] = {}
@@ -201,9 +210,16 @@ export default function NewSaleInvoiceTab() {
     )
   }
 
-  // Recomputes discount-promo amounts and keeps each Buy-X-Get-Y line's
-  // auto-added $0 "free" companion row in sync with its paid line's
-  // quantity — adding, updating, or removing that row as needed.
+  function activeBuyPromos(forDate) {
+    return promotions.filter(
+      (p) => p.promo_type === 'buy_x_get_y' && p.is_active && forDate >= p.start_date && forDate <= p.end_date
+    )
+  }
+
+  // Recomputes discount-promo amounts, and keeps each active Buy-X-Get-Y
+  // deal's single auto-added $0 "free" line in sync with the combined
+  // quantity of every paid line across its (possibly mixed) buy items —
+  // adding, updating, or removing that line as needed.
   function applyPromotions(inputLines, forDate) {
     let result = inputLines.map((l) => ({ ...l }))
 
@@ -220,18 +236,20 @@ export default function NewSaleInvoiceTab() {
       return { ...l, discount }
     })
 
-    const paidLines = result.filter((l) => !l.promoFreeFor)
-    for (const line of paidLines) {
-      const promo = activePromo(line.product_id, 'buy_x_get_y', forDate)
-      const existingIdx = result.findIndex((l) => l.promoFreeFor === line.key)
-      const freeQty = promo ? Math.floor((Number(line.quantity) || 0) / promo.buy_qty) * promo.free_qty : 0
+    for (const promo of activeBuyPromos(forDate)) {
+      const eligibleIds = promoBuyProducts[promo.id]?.length ? promoBuyProducts[promo.id] : [promo.product_id]
+      const totalQty = result
+        .filter((l) => !l.promoFreeFor && eligibleIds.includes(l.product_id))
+        .reduce((sum, l) => sum + (Number(l.quantity) || 0), 0)
+      const freeQty = promo.buy_qty > 0 ? Math.floor(totalQty / promo.buy_qty) * promo.free_qty : 0
+      const existingIdx = result.findIndex((l) => l.promoFreeFor === promo.id)
 
-      if (!promo || freeQty <= 0) {
+      if (freeQty <= 0) {
         if (existingIdx !== -1) result.splice(existingIdx, 1)
         continue
       }
 
-      const freeProductId = promo.free_product_id || line.product_id
+      const freeProductId = promo.free_product_id || promo.product_id
       const freeProduct = products.find((p) => p.id === freeProductId)
       const freeLineData = {
         product_id: freeProductId,
@@ -240,13 +258,12 @@ export default function NewSaleInvoiceTab() {
         rate: 0,
         discount: 0,
         gst_applicable: false,
-        promoFreeFor: line.key,
+        promoFreeFor: promo.id,
       }
       if (existingIdx !== -1) {
         result[existingIdx] = { ...result[existingIdx], ...freeLineData }
       } else {
-        const insertAt = result.findIndex((l) => l.key === line.key) + 1
-        result.splice(insertAt, 0, { key: crypto.randomUUID(), ...freeLineData })
+        result.push({ key: crypto.randomUUID(), ...freeLineData })
       }
     }
 
@@ -284,7 +301,14 @@ export default function NewSaleInvoiceTab() {
   }
 
   function removeLine(key) {
-    setLines(lines.filter((l) => l.key !== key && l.promoFreeFor !== key))
+    setLines((prev) => {
+      const target = prev.find((l) => l.key === key)
+      const filtered = prev.filter((l) => l.key !== key)
+      // Removing a paid line can change (or clear) a mixed-item promo's
+      // total, so recompute; removing an auto-added free line manually is
+      // left as the cashier's explicit choice, not recomputed back in.
+      return target?.promoFreeFor ? filtered : applyPromotions(filtered, date)
+    })
   }
 
   function lineAmount(line) {

@@ -573,6 +573,21 @@ create index if not exists idx_promotions_product on promotions(product_id);
 create index if not exists idx_promotions_dates on promotions(start_date, end_date);
 -- RLS policy for this table is set below in the bulk RLS block.
 
+-- Buy X Get Y Free promotions: the "buy" side can be a mix of several
+-- items whose combined quantity counts toward buy_qty (not just one).
+-- promotions.product_id is kept (set to the first selected buy item) for
+-- backward compatibility with single-item promotions.
+create table if not exists promotion_products (
+  id uuid primary key default gen_random_uuid(),
+  promotion_id uuid not null references promotions(id) on delete cascade,
+  product_id uuid not null references products(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (promotion_id, product_id)
+);
+
+create index if not exists idx_promotion_products_promotion on promotion_products(promotion_id);
+-- RLS policy for this table is set below in the bulk RLS block.
+
 create or replace function bump_average_cost(p_product_id uuid, p_qty_in numeric, p_unit_cost numeric)
 returns void as $$
 declare
@@ -759,7 +774,7 @@ begin
       'expenses',
       'expense_categories','daily_closing','gst_rate_history',
       'gst_returns','customer_item_prices',
-      'yield_configurations','yield_configuration_items','product_channel_config','promotions',
+      'yield_configurations','yield_configuration_items','product_channel_config','promotions','promotion_products',
       'quotations','quotation_items'
     ])
   loop

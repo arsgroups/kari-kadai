@@ -6,6 +6,7 @@ const emptyForm = {
   id: null,
   name: '',
   product_id: '',
+  buy_product_ids: [],
   promo_type: 'discount',
   discount_type: 'percent',
   discount_value: '',
@@ -30,7 +31,9 @@ function promoDetails(p) {
     return p.discount_type === 'percent' ? `${p.discount_value}% off` : `${formatMoney(p.discount_value)} off`
   }
   const freeName = p.free_products?.name ?? p.products?.name
-  return `Buy ${p.buy_qty} ${p.products?.name ?? ''}, Get ${p.free_qty} ${freeName ?? ''} Free`
+  const names = p.buyProductNames?.length ? p.buyProductNames : [p.products?.name].filter(Boolean)
+  const buyLabel = names.length > 1 ? `mixed: ${names.join(' + ')}` : names[0] ?? ''
+  return `Buy ${p.buy_qty} (${buyLabel}), Get ${p.free_qty} ${freeName ?? ''} Free`
 }
 
 export default function Promotions() {
@@ -44,15 +47,24 @@ export default function Promotions() {
 
   async function load() {
     setLoading(true)
-    const [{ data: promoData, error: promoError }, { data: productData }] = await Promise.all([
-      supabase
-        .from('promotions')
-        .select('*, products!promotions_product_id_fkey(name), free_products:products!promotions_free_product_id_fkey(name)')
-        .order('start_date', { ascending: false }),
-      supabase.from('products').select('id, name').eq('is_active', true).order('name'),
-    ])
+    const [{ data: promoData, error: promoError }, { data: productData }, { data: buyProductRows }] =
+      await Promise.all([
+        supabase
+          .from('promotions')
+          .select('*, products!promotions_product_id_fkey(name), free_products:products!promotions_free_product_id_fkey(name)')
+          .order('start_date', { ascending: false }),
+        supabase.from('products').select('id, name').eq('is_active', true).order('name'),
+        supabase.from('promotion_products').select('promotion_id, products(name)'),
+      ])
     if (promoError) setError(promoError.message)
-    else setRows(promoData ?? [])
+    else {
+      const namesByPromo = {}
+      ;(buyProductRows ?? []).forEach((r) => {
+        if (!namesByPromo[r.promotion_id]) namesByPromo[r.promotion_id] = []
+        if (r.products?.name) namesByPromo[r.promotion_id].push(r.products.name)
+      })
+      setRows((promoData ?? []).map((p) => ({ ...p, buyProductNames: namesByPromo[p.id] ?? [] })))
+    }
     setProducts(productData ?? [])
     setLoading(false)
   }
@@ -66,11 +78,14 @@ export default function Promotions() {
     setShowForm(true)
   }
 
-  function startEdit(p) {
+  async function startEdit(p) {
+    const { data: buyRows } = await supabase.from('promotion_products').select('product_id').eq('promotion_id', p.id)
+    const buyProductIds = (buyRows ?? []).map((r) => r.product_id)
     setForm({
       id: p.id,
       name: p.name,
       product_id: p.product_id,
+      buy_product_ids: buyProductIds.length ? buyProductIds : p.product_id ? [p.product_id] : [],
       promo_type: p.promo_type,
       discount_type: p.discount_type ?? 'percent',
       discount_value: p.discount_value ?? '',
@@ -84,11 +99,24 @@ export default function Promotions() {
     setShowForm(true)
   }
 
+  function toggleBuyProduct(productId) {
+    setForm((prev) => ({
+      ...prev,
+      buy_product_ids: prev.buy_product_ids.includes(productId)
+        ? prev.buy_product_ids.filter((id) => id !== productId)
+        : [...prev.buy_product_ids, productId],
+    }))
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
-    if (!form.product_id) {
+    if (form.promo_type === 'discount' && !form.product_id) {
       setError('Select an item for this promotion.')
+      return
+    }
+    if (form.promo_type === 'buy_x_get_y' && form.buy_product_ids.length === 0) {
+      setError('Select at least one item to buy — tick several for a mixed-item deal.')
       return
     }
     if (form.end_date < form.start_date) {
@@ -96,27 +124,50 @@ export default function Promotions() {
       return
     }
     setSaving(true)
+    const primaryProductId = form.promo_type === 'buy_x_get_y' ? form.buy_product_ids[0] : form.product_id
     const payload = {
       name: form.name,
-      product_id: form.product_id,
+      product_id: primaryProductId,
       promo_type: form.promo_type,
       discount_type: form.promo_type === 'discount' ? form.discount_type : null,
       discount_value: form.promo_type === 'discount' ? Number(form.discount_value) || 0 : null,
       buy_qty: form.promo_type === 'buy_x_get_y' ? Number(form.buy_qty) || 0 : null,
       free_qty: form.promo_type === 'buy_x_get_y' ? Number(form.free_qty) || 0 : null,
-      free_product_id: form.promo_type === 'buy_x_get_y' ? form.free_product_id || form.product_id : null,
+      free_product_id: form.promo_type === 'buy_x_get_y' ? form.free_product_id || primaryProductId : null,
       start_date: form.start_date,
       end_date: form.end_date,
       is_active: form.is_active,
     }
-    const { error } = form.id
-      ? await supabase.from('promotions').update(payload).eq('id', form.id)
-      : await supabase.from('promotions').insert(payload)
-    setSaving(false)
+    const { data: savedPromo, error } = form.id
+      ? await supabase.from('promotions').update(payload).eq('id', form.id).select().single()
+      : await supabase.from('promotions').insert(payload).select().single()
     if (error) {
+      setSaving(false)
       setError(error.message)
       return
     }
+
+    // Keep promotion_products (the mixed-item "buy" set) in sync -- always
+    // reset it, whether this is buy_x_get_y (repopulated below) or discount
+    // (left empty).
+    const { error: clearError } = await supabase.from('promotion_products').delete().eq('promotion_id', savedPromo.id)
+    if (clearError) {
+      setSaving(false)
+      setError(clearError.message)
+      return
+    }
+    if (form.promo_type === 'buy_x_get_y' && form.buy_product_ids.length) {
+      const { error: insertError } = await supabase
+        .from('promotion_products')
+        .insert(form.buy_product_ids.map((productId) => ({ promotion_id: savedPromo.id, product_id: productId })))
+      if (insertError) {
+        setSaving(false)
+        setError(insertError.message)
+        return
+      }
+    }
+
+    setSaving(false)
     setShowForm(false)
     setForm(emptyForm)
     load()
@@ -168,17 +219,19 @@ export default function Promotions() {
                 required
               />
             </label>
-            <label>
-              {form.promo_type === 'buy_x_get_y' ? 'Buy Item' : 'Item'}
-              <select value={form.product_id} onChange={(e) => setForm({ ...form, product_id: e.target.value })} required>
-                <option value="">Select…</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {form.promo_type === 'discount' && (
+              <label>
+                Item
+                <select value={form.product_id} onChange={(e) => setForm({ ...form, product_id: e.target.value })} required>
+                  <option value="">Select…</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label>
               Promotion Type
               <select value={form.promo_type} onChange={(e) => setForm({ ...form, promo_type: e.target.value })}>
@@ -212,6 +265,33 @@ export default function Promotions() {
               </>
             ) : (
               <>
+                <div className="channel-config" style={{ gridColumn: '1 / -1' }}>
+                  <strong>Buy Item(s)</strong>
+                  <p className="muted" style={{ fontSize: '0.8rem', margin: '0.2rem 0 0.5rem' }}>
+                    Tick one item, or several for a mixed-item deal — their combined quantity (each in its
+                    own Kg/Unit) counts toward the Buy Quantity below.
+                  </p>
+                  <div
+                    style={{
+                      maxHeight: 160,
+                      overflowY: 'auto',
+                      border: '1px solid var(--border)',
+                      borderRadius: 6,
+                      padding: '0.5rem 0.75rem',
+                    }}
+                  >
+                    {products.map((p) => (
+                      <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.3rem' }}>
+                        <input
+                          type="checkbox"
+                          checked={form.buy_product_ids.includes(p.id)}
+                          onChange={() => toggleBuyProduct(p.id)}
+                        />
+                        {p.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
                 <label>
                   Buy Quantity
                   <input
@@ -326,7 +406,11 @@ export default function Promotions() {
                 return (
                   <tr key={p.id}>
                     <td>{p.name}</td>
-                    <td>{p.products?.name}</td>
+                    <td>
+                      {p.promo_type === 'buy_x_get_y' && p.buyProductNames?.length > 1
+                        ? `${p.buyProductNames.length} items (mixed)`
+                        : p.products?.name}
+                    </td>
                     <td>{p.promo_type === 'discount' ? 'Discount' : 'Buy X Get Y Free'}</td>
                     <td>{promoDetails(p)}</td>
                     <td>
