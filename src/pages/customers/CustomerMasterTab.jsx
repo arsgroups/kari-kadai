@@ -3,7 +3,15 @@ import { supabase } from '../../lib/supabaseClient'
 import { formatMoney } from '../../lib/format'
 import CustomerEditView from './CustomerEditView'
 
-const emptyForm = { name: '', type: 'Restaurant', mobile: '', address: '', credit_limit: '', credit_days: '' }
+const emptyForm = {
+  name: '',
+  type: 'Restaurant',
+  mobile: '',
+  address: '',
+  credit_limit: '',
+  credit_days: '',
+  surcharge_applicable: true,
+}
 
 export default function CustomerMasterTab() {
   const [rows, setRows] = useState([])
@@ -40,6 +48,7 @@ export default function CustomerMasterTab() {
       address: form.address || null,
       credit_limit: form.credit_limit === '' ? null : Number(form.credit_limit),
       credit_days: form.credit_days === '' ? null : Number(form.credit_days),
+      surcharge_applicable: form.surcharge_applicable,
     }
     const { error } = await supabase.from('customers').insert(payload)
 
@@ -125,6 +134,18 @@ export default function CustomerMasterTab() {
                 onChange={(e) => setForm({ ...form, credit_days: e.target.value })}
               />
             </label>
+            {form.type === 'Restaurant' && (
+              <label>
+                9% Surcharge
+                <select
+                  value={form.surcharge_applicable ? 'yes' : 'no'}
+                  onChange={(e) => setForm({ ...form, surcharge_applicable: e.target.value === 'yes' })}
+                >
+                  <option value="yes">Yes — default the checkbox on for this customer's invoices</option>
+                  <option value="no">No — default the checkbox off for this customer's invoices</option>
+                </select>
+              </label>
+            )}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button className="btn" type="submit" disabled={saving}>
                 {saving ? 'Saving…' : 'Save'}

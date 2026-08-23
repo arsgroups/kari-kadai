@@ -105,6 +105,7 @@ create table if not exists customers (
   address text,
   credit_limit numeric,
   credit_days integer,
+  surcharge_applicable boolean not null default true, -- Restaurant only: default for the invoice-level checkbox
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -135,6 +136,7 @@ create table if not exists sale_invoices (
   total numeric generated always as (subtotal + gst_amount) stored,
   paid_amount numeric not null default 0,
   balance numeric generated always as (subtotal + gst_amount - paid_amount) stored,
+  surcharge_applicable boolean not null default true, -- Restaurant only: whether the 9% was applied on this invoice
   remarks text,
   note text,
   created_at timestamptz not null default now()

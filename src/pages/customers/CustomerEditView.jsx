@@ -25,6 +25,7 @@ export default function CustomerEditView({ customerId, onDone }) {
             address: data.address ?? '',
             credit_limit: data.credit_limit ?? '',
             credit_days: data.credit_days ?? '',
+            surcharge_applicable: data.surcharge_applicable ?? true,
             is_active: data.is_active,
           })
         }
@@ -42,6 +43,7 @@ export default function CustomerEditView({ customerId, onDone }) {
       address: form.address || null,
       credit_limit: form.credit_limit === '' ? null : Number(form.credit_limit),
       credit_days: form.credit_days === '' ? null : Number(form.credit_days),
+      surcharge_applicable: form.surcharge_applicable,
       is_active: form.is_active,
     }
     const { error } = await supabase.from('customers').update(payload).eq('id', customerId)
@@ -129,6 +131,18 @@ export default function CustomerEditView({ customerId, onDone }) {
                       onChange={(e) => setForm({ ...form, credit_days: e.target.value })}
                     />
                   </label>
+                  {form.type === 'Restaurant' && (
+                    <label>
+                      9% Surcharge
+                      <select
+                        value={form.surcharge_applicable ? 'yes' : 'no'}
+                        onChange={(e) => setForm({ ...form, surcharge_applicable: e.target.value === 'yes' })}
+                      >
+                        <option value="yes">Yes — default the checkbox on for this customer's invoices</option>
+                        <option value="no">No — default the checkbox off for this customer's invoices</option>
+                      </select>
+                    </label>
+                  )}
                   <label>
                     <span style={{ display: 'block', marginBottom: '0.3rem' }}>Status</span>
                     <select

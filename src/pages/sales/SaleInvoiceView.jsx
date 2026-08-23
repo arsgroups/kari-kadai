@@ -79,6 +79,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   const headerImageUrl = branding?.header_image_url || invoiceHeaderImg
   const footerImageUrl = branding?.footer_image_url || null
   const isRestaurant = invoice?.channel === 'Restaurant'
+  const showSurcharge = isRestaurant && Number(invoice?.gst_amount) > 0
 
   async function downloadPdf() {
     if (!invoice) return
@@ -133,10 +134,10 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     })
 
     let y = doc.lastAutoTable.finalY + 10
-    doc.setFontSize(isRestaurant ? 10 : 12)
+    doc.setFontSize(showSurcharge ? 10 : 12)
     doc.text(`Total: ${formatMoney(invoice.subtotal)}`, 150, y)
-    y += isRestaurant ? 5 : 7
-    if (isRestaurant) {
+    y += showSurcharge ? 5 : 7
+    if (showSurcharge) {
       doc.text(`S$${Math.round(Number(invoice.gst_amount))}`, 150, y)
       y += 7
       doc.setFontSize(12)
@@ -325,7 +326,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
     const newSubtotal = round2(editLines.reduce((sum, l) => sum + editLineAmount(l), 0))
     let newGstAmount = 0
-    if (invoice.channel === 'Restaurant') {
+    if (invoice.channel === 'Restaurant' && invoice.surcharge_applicable) {
       const rates = await fetchRateHistory()
       const rate = buildRateResolver(rates)(invoice.date)
       newGstAmount = Math.round(newSubtotal * (rate / 100))
@@ -559,11 +560,11 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         <div className="invoice-totals">
           <table>
             <tbody>
-              <tr style={{ fontWeight: isRestaurant ? 400 : 700 }}>
+              <tr style={{ fontWeight: showSurcharge ? 400 : 700 }}>
                 <td>Total</td>
                 <td>{formatMoney(invoice.subtotal)}</td>
               </tr>
-              {isRestaurant && (
+              {showSurcharge && (
                 <>
                   <tr>
                     <td></td>

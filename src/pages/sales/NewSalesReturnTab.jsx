@@ -27,7 +27,9 @@ export default function NewSalesReturnTab() {
     setFinding(true)
     const { data: inv, error: invError } = await supabase
       .from('sale_invoices')
-      .select('id, invoice_number, date, channel, customer_id, subtotal, gst_amount, total, customers(name)')
+      .select(
+        'id, invoice_number, date, channel, customer_id, subtotal, gst_amount, total, surcharge_applicable, customers(name)'
+      )
       .eq('invoice_number', invoiceNumber.trim())
       .single()
 
@@ -129,7 +131,7 @@ export default function NewSalesReturnTab() {
     // way it's computed at Sale entry; other channels stay at 0.
     const newSubtotal = round2(Number(invoice.subtotal) - totalReturnAmount)
     let newGstAmount = 0
-    if (invoice.channel === 'Restaurant') {
+    if (invoice.channel === 'Restaurant' && invoice.surcharge_applicable) {
       const rates = await fetchRateHistory()
       const rate = buildRateResolver(rates)(invoice.date)
       newGstAmount = Math.round(newSubtotal * (rate / 100))

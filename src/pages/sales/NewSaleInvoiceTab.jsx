@@ -37,6 +37,7 @@ export default function NewSaleInvoiceTab() {
   const [paidAmount, setPaidAmount] = useState('')
   const [paidAmountTouched, setPaidAmountTouched] = useState(false)
   const [remarks, setRemarks] = useState('')
+  const [applySurcharge, setApplySurcharge] = useState(true) // Restaurant only, defaults from the customer's profile
   const [lines, setLines] = useState([emptyLine()])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -45,7 +46,7 @@ export default function NewSaleInvoiceTab() {
   useEffect(() => {
     supabase
       .from('customers')
-      .select('id, name, type, credit_days')
+      .select('id, name, type, credit_days, surcharge_applicable')
       .eq('is_active', true)
       .order('name')
       .then(({ data }) => setCustomers(data ?? []))
@@ -115,8 +116,10 @@ export default function NewSaleInvoiceTab() {
   useEffect(() => {
     if (!customerId) {
       setCustomerPrices({})
+      setApplySurcharge(true)
       return
     }
+    setApplySurcharge(customers.find((c) => c.id === customerId)?.surcharge_applicable ?? true)
     supabase
       .from('customer_item_prices')
       .select('product_id, price')
@@ -128,6 +131,7 @@ export default function NewSaleInvoiceTab() {
         })
         setCustomerPrices(map)
       })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId])
 
   // Re-price any lines that already have an item picked when the channel
@@ -184,9 +188,12 @@ export default function NewSaleInvoiceTab() {
   const rate = getRate(date)
   // Not GST-registered: Counter and Home Delivery charge exactly the entered
   // Price, nothing added, single Total. Restaurant still adds a flat 9%
-  // surcharge, shown as a plain rounded number below the Total (no "Tax"/
-  // "GST" wording, no per-line breakout).
+  // surcharge by default, shown as a plain rounded number below the Total
+  // (no "Tax"/"GST" wording, no per-line breakout) -- unless the Surcharge
+  // checkbox is unticked, defaulted from the customer's profile but
+  // overridable per invoice.
   const isRestaurant = channel === 'Restaurant'
+  const showSurcharge = isRestaurant && applySurcharge
 
   // Products actually offered on the currently selected channel, with any
   // per-channel display name applied (e.g. "Mutton" here, "Fresh Goat/Lamb"
@@ -338,7 +345,7 @@ export default function NewSaleInvoiceTab() {
   const subtotal = round2(lines.reduce((sum, l) => sum + lineAmount(l), 0))
   // Restaurant's 9% is charged only on the invoice total, not per line, and
   // is rounded to a whole number rather than to the cent.
-  const gstTotal = isRestaurant ? Math.round(subtotal * (rate / 100)) : 0
+  const gstTotal = showSurcharge ? Math.round(subtotal * (rate / 100)) : 0
   const grandTotal = round2(subtotal + gstTotal)
 
   const effectivePaid =
@@ -372,6 +379,7 @@ export default function NewSaleInvoiceTab() {
         due_date: paymentType === 'Credit' && dueDate ? dueDate : null,
         subtotal,
         gst_amount: gstTotal,
+        surcharge_applicable: applySurcharge,
         paid_amount: effectivePaid,
         remarks: remarks || null,
       })
@@ -513,6 +521,13 @@ export default function NewSaleInvoiceTab() {
         </p>
       )}
 
+      {isRestaurant && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', marginTop: '0.75rem' }}>
+          <input type="checkbox" checked={applySurcharge} onChange={(e) => setApplySurcharge(e.target.checked)} />
+          Apply 9% Surcharge
+        </label>
+      )}
+
       <table className="data-table" style={{ marginTop: '1.25rem' }}>
         <thead>
           <tr>
@@ -620,11 +635,11 @@ export default function NewSaleInvoiceTab() {
       <div className="card" style={{ marginTop: '1.25rem', maxWidth: 320 }}>
         <table className="data-table">
           <tbody>
-            <tr style={{ fontWeight: isRestaurant ? 400 : 700 }}>
+            <tr style={{ fontWeight: showSurcharge ? 400 : 700 }}>
               <td>Total</td>
               <td>{formatMoney(subtotal)}</td>
             </tr>
-            {isRestaurant && (
+            {showSurcharge && (
               <>
                 <tr>
                   <td></td>
