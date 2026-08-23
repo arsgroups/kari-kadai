@@ -1,12 +1,18 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
+import { fetchRateHistory, buildRateResolver } from '../../lib/gst'
 import { toISODate } from '../../lib/format'
 
 const HISTORICAL_SUPPLIER_NAME = 'Historical Data (Previous System)'
 const HISTORICAL_NOTE = 'Historical import — previous system daily total'
+const SALES_CHANNELS = [
+  { key: 'counterSales', channel: 'Counter', label: 'Counter Sales' },
+  { key: 'homeDeliverySales', channel: 'Home Delivery', label: 'Home Delivery Sales' },
+  { key: 'restaurantSales', channel: 'Restaurant', label: 'Restaurant Sales' },
+]
 
 function emptyRow() {
-  return { key: crypto.randomUUID(), date: toISODate(), sales: '', purchases: '', expenses: '' }
+  return { key: crypto.randomUUID(), date: toISODate(), counterSales: '', homeDeliverySales: '', restaurantSales: '', purchases: '', expenses: '' }
 }
 
 function addDays(dateStr, n) {
@@ -40,7 +46,15 @@ export default function HistoricalDataEntryPanel() {
     const generated = []
     let d = rangeFrom
     while (d <= rangeTo) {
-      generated.push({ key: crypto.randomUUID(), date: d, sales: '', purchases: '', expenses: '' })
+      generated.push({
+        key: crypto.randomUUID(),
+        date: d,
+        counterSales: '',
+        homeDeliverySales: '',
+        restaurantSales: '',
+        purchases: '',
+        expenses: '',
+      })
       d = addDays(d, 1)
     }
     setRows(generated)
@@ -67,7 +81,9 @@ export default function HistoricalDataEntryPanel() {
     setSuccess('')
 
     const validRows = rows.filter(
-      (r) => r.date && (Number(r.sales) > 0 || Number(r.purchases) > 0 || Number(r.expenses) > 0)
+      (r) =>
+        r.date &&
+        (SALES_CHANNELS.some((c) => Number(r[c.key]) > 0) || Number(r.purchases) > 0 || Number(r.expenses) > 0)
     )
     if (validRows.length === 0) {
       setError('Enter at least one amount on at least one dated row.')
@@ -87,24 +103,33 @@ export default function HistoricalDataEntryPanel() {
       }
     }
 
+    // Restaurant's 9% surcharge is derived the same way it is at Sale entry
+    // and on Sales Returns -- computed on the entered (net) amount, rounded
+    // to a whole number.
+    const rateHistory = await fetchRateHistory()
+    const getRate = buildRateResolver(rateHistory)
+
     let salesCount = 0
     let purchaseCount = 0
     let expenseCount = 0
 
     for (const row of validRows) {
-      if (Number(row.sales) > 0) {
+      for (const { key, channel, label } of SALES_CHANNELS) {
+        const amount = Number(row[key])
+        if (amount <= 0) continue
+        const gstAmount = channel === 'Restaurant' ? Math.round(amount * (getRate(row.date) / 100)) : 0
         const { error: err } = await supabase.from('sale_invoices').insert({
           date: row.date,
-          channel: 'Counter',
+          channel,
           payment_type: 'Cash',
-          subtotal: Number(row.sales),
-          gst_amount: 0,
-          paid_amount: Number(row.sales),
+          subtotal: amount,
+          gst_amount: gstAmount,
+          paid_amount: amount + gstAmount,
           remarks: HISTORICAL_NOTE,
         })
         if (err) {
           setSaving(false)
-          setError(`Failed on ${row.date} (sales): ${err.message}`)
+          setError(`Failed on ${row.date} (${label}): ${err.message}`)
           return
         }
         salesCount++
@@ -147,7 +172,7 @@ export default function HistoricalDataEntryPanel() {
 
     setSaving(false)
     setSuccess(
-      `Imported ${validRows.length} day(s): ${salesCount} sales total(s), ${purchaseCount} purchase total(s), ${expenseCount} expense total(s).`
+      `Imported ${validRows.length} day(s): ${salesCount} sales entr(y/ies), ${purchaseCount} purchase total(s), ${expenseCount} expense total(s).`
     )
     setRows([emptyRow()])
   }
@@ -157,12 +182,14 @@ export default function HistoricalDataEntryPanel() {
       <h3>Historical Data Entry</h3>
       <p className="muted" style={{ fontSize: '0.85rem' }}>
         For days run on your previous system before switching to this app. Enter one row per day with
-        that day's <strong>total</strong> sales, purchases, and expenses (not itemized) — each non-empty
-        amount becomes a single invoice/expense entry for that date, feeding Dashboard, P&amp;L, and
-        Monthly Revenue correctly. This does <strong>not</strong> affect current stock levels or item-level
-        reports (no line items are created, so no stock movements happen). Leave a field blank to skip it
-        for that day. Purchases are recorded under an auto-created supplier named "
-        {HISTORICAL_SUPPLIER_NAME}".
+        that day's <strong>totals</strong> (not itemized) — sales broken down by channel (Counter, Home
+        Delivery, Restaurant), plus purchases and expenses. Each non-empty amount becomes a single
+        invoice/expense entry for that date and channel, feeding Dashboard, P&amp;L, and Monthly Revenue
+        correctly (Restaurant sales get the usual 9% surcharge added, same as a live sale). This does{' '}
+        <strong>not</strong> affect current stock levels or item-level reports (no line items are
+        created, so no stock movements happen). If all of a day's sales were from one channel, just fill
+        in that channel's box and leave the others blank. Purchases are recorded under an auto-created
+        supplier named "{HISTORICAL_SUPPLIER_NAME}".
       </p>
 
       <div className="form-grid" style={{ marginBottom: '1rem', maxWidth: 500 }}>
@@ -183,7 +210,9 @@ export default function HistoricalDataEntryPanel() {
         <thead>
           <tr>
             <th>Date</th>
-            <th>Sales Total</th>
+            <th>Counter Sales</th>
+            <th>Home Delivery Sales</th>
+            <th>Restaurant Sales</th>
             <th>Purchase Total</th>
             <th>Expense Total</th>
             <th></th>
@@ -195,16 +224,18 @@ export default function HistoricalDataEntryPanel() {
               <td>
                 <input type="date" value={row.date} onChange={(e) => updateRow(row.key, { date: e.target.value })} />
               </td>
-              <td>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  style={{ width: 110 }}
-                  value={row.sales}
-                  onChange={(e) => updateRow(row.key, { sales: e.target.value })}
-                />
-              </td>
+              {SALES_CHANNELS.map(({ key }) => (
+                <td key={key}>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    style={{ width: 100 }}
+                    value={row[key]}
+                    onChange={(e) => updateRow(row.key, { [key]: e.target.value })}
+                  />
+                </td>
+              ))}
               <td>
                 <input
                   type="number"
