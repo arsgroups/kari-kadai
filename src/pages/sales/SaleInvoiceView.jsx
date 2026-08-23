@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney } from '../../lib/format'
-import { fetchRateHistory, buildRateResolver, round2 } from '../../lib/gst'
+import { fetchRateHistory, buildRateResolver, round2, roundSurcharge } from '../../lib/gst'
 import { COMPANY } from '../../lib/companyInfo'
 import invoiceHeaderImg from '../../assets/invoice-header.jpg'
 import { useAuth } from '../../contexts/AuthContext'
@@ -138,7 +138,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     doc.text(`Total: ${formatMoney(invoice.subtotal)}`, 150, y)
     y += showSurcharge ? 5 : 7
     if (showSurcharge) {
-      doc.text(`S$${Math.round(Number(invoice.gst_amount))}`, 150, y)
+      doc.text(formatMoney(invoice.gst_amount), 150, y)
       y += 7
       doc.setFontSize(12)
       doc.text(`Net Total: ${formatMoney(invoice.total)}`, 150, y)
@@ -329,7 +329,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     if (invoice.channel === 'Restaurant' && invoice.surcharge_applicable) {
       const rates = await fetchRateHistory()
       const rate = buildRateResolver(rates)(invoice.date)
-      newGstAmount = Math.round(newSubtotal * (rate / 100))
+      newGstAmount = roundSurcharge(newSubtotal * (rate / 100))
     }
 
     const { error: invErr } = await supabase
@@ -568,7 +568,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
                 <>
                   <tr>
                     <td></td>
-                    <td>S${Math.round(Number(invoice.gst_amount))}</td>
+                    <td>{formatMoney(invoice.gst_amount)}</td>
                   </tr>
                   <tr style={{ fontWeight: 700 }}>
                     <td>Net Total</td>

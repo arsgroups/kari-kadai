@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { fetchRateHistory, buildRateResolver } from '../../lib/gst'
+import { fetchRateHistory, buildRateResolver, roundSurcharge } from '../../lib/gst'
 import { toISODate } from '../../lib/format'
 
 const HISTORICAL_SUPPLIER_NAME = 'Historical Data (Previous System)'
@@ -104,8 +104,8 @@ export default function HistoricalDataEntryPanel() {
     }
 
     // Restaurant's 9% surcharge is derived the same way it is at Sale entry
-    // and on Sales Returns -- computed on the entered (net) amount, rounded
-    // to a whole number.
+    // and on Sales Returns -- extracted from the entered (inclusive) amount,
+    // rounded to the nearest 50 cents (10 cents if under $1).
     const rateHistory = await fetchRateHistory()
     const getRate = buildRateResolver(rateHistory)
 
@@ -121,7 +121,7 @@ export default function HistoricalDataEntryPanel() {
         // 9% surcharge baked in -- extract it out rather than adding more on
         // top, so subtotal + gst_amount reconstructs exactly to `amount`.
         const gstAmount =
-          channel === 'Restaurant' ? Math.round(amount - amount / (1 + getRate(row.date) / 100)) : 0
+          channel === 'Restaurant' ? roundSurcharge(amount - amount / (1 + getRate(row.date) / 100)) : 0
         const subtotal = amount - gstAmount
         const { error: err } = await supabase.from('sale_invoices').insert({
           date: row.date,

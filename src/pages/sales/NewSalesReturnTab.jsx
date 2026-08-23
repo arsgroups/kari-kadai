@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { fetchRateHistory, buildRateResolver, round2 } from '../../lib/gst'
+import { fetchRateHistory, buildRateResolver, round2, roundSurcharge } from '../../lib/gst'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
 
 export default function NewSalesReturnTab() {
@@ -134,7 +134,7 @@ export default function NewSalesReturnTab() {
     if (invoice.channel === 'Restaurant' && invoice.surcharge_applicable) {
       const rates = await fetchRateHistory()
       const rate = buildRateResolver(rates)(invoice.date)
-      newGstAmount = Math.round(newSubtotal * (rate / 100))
+      newGstAmount = roundSurcharge(newSubtotal * (rate / 100))
     }
 
     const { error: updateError } = await supabase

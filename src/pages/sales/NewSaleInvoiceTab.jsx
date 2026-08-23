@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { fetchRateHistory, buildRateResolver, round2 } from '../../lib/gst'
+import { fetchRateHistory, buildRateResolver, round2, roundSurcharge } from '../../lib/gst'
 import { conversionFactor } from '../../lib/units'
 import { toISODate, formatMoney } from '../../lib/format'
 import SaleInvoiceView from './SaleInvoiceView'
@@ -344,8 +344,8 @@ export default function NewSaleInvoiceTab() {
 
   const subtotal = round2(lines.reduce((sum, l) => sum + lineAmount(l), 0))
   // Restaurant's 9% is charged only on the invoice total, not per line, and
-  // is rounded to a whole number rather than to the cent.
-  const gstTotal = showSurcharge ? Math.round(subtotal * (rate / 100)) : 0
+  // rounds to the nearest 50 cents (10 cents if the raw amount is under $1).
+  const gstTotal = showSurcharge ? roundSurcharge(subtotal * (rate / 100)) : 0
   const grandTotal = round2(subtotal + gstTotal)
 
   const effectivePaid =
@@ -643,7 +643,7 @@ export default function NewSaleInvoiceTab() {
               <>
                 <tr>
                   <td></td>
-                  <td>S${gstTotal}</td>
+                  <td>{formatMoney(gstTotal)}</td>
                 </tr>
                 <tr style={{ fontWeight: 700 }}>
                   <td>Net Total</td>

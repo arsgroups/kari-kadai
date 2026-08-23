@@ -34,3 +34,11 @@ export function gstPortion(inclusiveTotal, ratePercent) {
 export function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100
 }
+
+// Restaurant's 9% surcharge rounds to the nearest 50 cents -- except when
+// the raw amount comes to under $1, where it rounds to the nearest 10
+// cents instead (50-cent steps would be too coarse on a sub-dollar figure).
+export function roundSurcharge(amount) {
+  const step = amount < 1 ? 0.1 : 0.5
+  return round2(Math.round(amount / step) * step)
+}
