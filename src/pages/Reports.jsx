@@ -6,6 +6,7 @@ import CustomerLedgerTab from './reports/CustomerLedgerTab'
 import SupplierLedgerTab from './reports/SupplierLedgerTab'
 import InventoryValuationTab from './reports/InventoryValuationTab'
 import ItemMarginTab from './reports/ItemMarginTab'
+import ChannelMarginTab from './reports/ChannelMarginTab'
 
 export default function Reports() {
   return (
@@ -16,6 +17,7 @@ export default function Reports() {
           { key: 'dashboard', label: 'Dashboard', content: <DashboardTab /> },
           { key: 'pnl', label: 'P&L', content: <PnLTab /> },
           { key: 'item-margin', label: 'Item Margin', content: <ItemMarginTab /> },
+          { key: 'channel-margin', label: 'Channel Sales & Margin', content: <ChannelMarginTab /> },
           { key: 'drilldown', label: 'Drill-down Builder', content: <DrilldownTab /> },
           { key: 'customer-ledger', label: 'Customer Ledger', content: <CustomerLedgerTab /> },
           { key: 'supplier-ledger', label: 'Supplier Ledger', content: <SupplierLedgerTab /> },
