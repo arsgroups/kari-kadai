@@ -11,6 +11,7 @@ const emptyForm = {
   discount_value: '',
   buy_qty: '',
   free_qty: '',
+  free_product_id: '',
   start_date: toISODate(),
   end_date: toISODate(),
   is_active: true,
@@ -28,7 +29,8 @@ function promoDetails(p) {
   if (p.promo_type === 'discount') {
     return p.discount_type === 'percent' ? `${p.discount_value}% off` : `${formatMoney(p.discount_value)} off`
   }
-  return `Buy ${p.buy_qty}, Get ${p.free_qty} Free`
+  const freeName = p.free_products?.name ?? p.products?.name
+  return `Buy ${p.buy_qty} ${p.products?.name ?? ''}, Get ${p.free_qty} ${freeName ?? ''} Free`
 }
 
 export default function Promotions() {
@@ -43,7 +45,10 @@ export default function Promotions() {
   async function load() {
     setLoading(true)
     const [{ data: promoData, error: promoError }, { data: productData }] = await Promise.all([
-      supabase.from('promotions').select('*, products(name)').order('start_date', { ascending: false }),
+      supabase
+        .from('promotions')
+        .select('*, products!promotions_product_id_fkey(name), free_products:products!promotions_free_product_id_fkey(name)')
+        .order('start_date', { ascending: false }),
       supabase.from('products').select('id, name').eq('is_active', true).order('name'),
     ])
     if (promoError) setError(promoError.message)
@@ -71,6 +76,7 @@ export default function Promotions() {
       discount_value: p.discount_value ?? '',
       buy_qty: p.buy_qty ?? '',
       free_qty: p.free_qty ?? '',
+      free_product_id: p.free_product_id ?? p.product_id ?? '',
       start_date: p.start_date,
       end_date: p.end_date,
       is_active: p.is_active,
@@ -98,6 +104,7 @@ export default function Promotions() {
       discount_value: form.promo_type === 'discount' ? Number(form.discount_value) || 0 : null,
       buy_qty: form.promo_type === 'buy_x_get_y' ? Number(form.buy_qty) || 0 : null,
       free_qty: form.promo_type === 'buy_x_get_y' ? Number(form.free_qty) || 0 : null,
+      free_product_id: form.promo_type === 'buy_x_get_y' ? form.free_product_id || form.product_id : null,
       start_date: form.start_date,
       end_date: form.end_date,
       is_active: form.is_active,
@@ -135,9 +142,11 @@ export default function Promotions() {
     <div className="page">
       <h1>Promotions</h1>
       <p className="muted" style={{ fontSize: '0.85rem' }}>
-        Define a time-bound offer on one item — a discount (percent or fixed amount) or a Buy X Get Y Free deal.
-        While a Sale Invoice's date falls within the period, it's applied automatically: the Discount column
-        fills in for a discount promo, and a separate $0 line is added for the free units on a Buy X Get Y deal.
+        Define a time-bound offer — a discount (percent or fixed amount) on one item, or a Buy X Get Y Free
+        deal where the free item can be the same item or a different one (e.g. Buy 5 Kg Chicken, Get 1 Unit
+        Wings free — each item's own Kg/Unit quantity is used). While a Sale Invoice's date falls within the
+        period, it's applied automatically: the Discount column fills in for a discount promo, and a separate
+        $0 line for the free item/quantity is added for a Buy X Get Y deal.
       </p>
 
       <div className="toolbar">
@@ -160,7 +169,7 @@ export default function Promotions() {
               />
             </label>
             <label>
-              Item
+              {form.promo_type === 'buy_x_get_y' ? 'Buy Item' : 'Item'}
               <select value={form.product_id} onChange={(e) => setForm({ ...form, product_id: e.target.value })} required>
                 <option value="">Select…</option>
                 {products.map((p) => (
@@ -213,6 +222,21 @@ export default function Promotions() {
                     onChange={(e) => setForm({ ...form, buy_qty: e.target.value })}
                     required
                   />
+                </label>
+                <label>
+                  Free Item
+                  <select
+                    value={form.free_product_id}
+                    onChange={(e) => setForm({ ...form, free_product_id: e.target.value })}
+                    required
+                  >
+                    <option value="">Same as Buy Item</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label>
                   Free Quantity

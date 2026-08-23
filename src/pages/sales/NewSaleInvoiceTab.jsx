@@ -231,11 +231,12 @@ export default function NewSaleInvoiceTab() {
         continue
       }
 
-      const product = products.find((p) => p.id === line.product_id)
+      const freeProductId = promo.free_product_id || line.product_id
+      const freeProduct = products.find((p) => p.id === freeProductId)
       const freeLineData = {
-        product_id: line.product_id,
+        product_id: freeProductId,
         quantity: freeQty,
-        unit: product?.sales_unit ?? '',
+        unit: freeProduct?.sales_unit ?? '',
         rate: 0,
         discount: 0,
         gst_applicable: false,

@@ -556,6 +556,7 @@ create table if not exists promotions (
   discount_value numeric,
   buy_qty numeric,
   free_qty numeric,
+  free_product_id uuid references products(id), -- buy_x_get_y only; falls back to product_id when unset
   start_date date not null,
   end_date date not null,
   is_active boolean not null default true,
