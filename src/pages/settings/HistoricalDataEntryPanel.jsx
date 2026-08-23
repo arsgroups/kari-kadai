@@ -117,14 +117,19 @@ export default function HistoricalDataEntryPanel() {
       for (const { key, channel, label } of SALES_CHANNELS) {
         const amount = Number(row[key])
         if (amount <= 0) continue
-        const gstAmount = channel === 'Restaurant' ? Math.round(amount * (getRate(row.date) / 100)) : 0
+        // The entered Restaurant amount is already the final figure with its
+        // 9% surcharge baked in -- extract it out rather than adding more on
+        // top, so subtotal + gst_amount reconstructs exactly to `amount`.
+        const gstAmount =
+          channel === 'Restaurant' ? Math.round(amount - amount / (1 + getRate(row.date) / 100)) : 0
+        const subtotal = amount - gstAmount
         const { error: err } = await supabase.from('sale_invoices').insert({
           date: row.date,
           channel,
           payment_type: 'Cash',
-          subtotal: amount,
+          subtotal,
           gst_amount: gstAmount,
-          paid_amount: amount + gstAmount,
+          paid_amount: amount,
           remarks: HISTORICAL_NOTE,
         })
         if (err) {
@@ -185,7 +190,9 @@ export default function HistoricalDataEntryPanel() {
         that day's <strong>totals</strong> (not itemized) — sales broken down by channel (Counter, Home
         Delivery, Restaurant), plus purchases and expenses. Each non-empty amount becomes a single
         invoice/expense entry for that date and channel, feeding Dashboard, P&amp;L, and Monthly Revenue
-        correctly (Restaurant sales get the usual 9% surcharge added, same as a live sale). This does{' '}
+        correctly. For Restaurant, enter the final figure you actually collected (already including its
+        9% surcharge) — it's split back into subtotal + surcharge for reporting, nothing extra is added
+        on top. This does{' '}
         <strong>not</strong> affect current stock levels or item-level reports (no line items are
         created, so no stock movements happen). If all of a day's sales were from one channel, just fill
         in that channel's box and leave the others blank. Purchases are recorded under an auto-created
