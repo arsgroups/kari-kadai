@@ -16,6 +16,7 @@ export default function Closing() {
   const [bankSales, setBankSales] = useState(0)
   const [creditSales, setCreditSales] = useState(0)
   const [pettyCashSpent, setPettyCashSpent] = useState(0)
+  const [cashCreditCollected, setCashCreditCollected] = useState(0)
   const [openingCash, setOpeningCash] = useState(0)
   const [actualCounted, setActualCounted] = useState('')
   const [note, setNote] = useState('')
@@ -32,25 +33,27 @@ export default function Closing() {
     setLoading(true)
     setError('')
 
-    const [salesRes, pettyRes, closingRes, prevClosingRes, outstandingRes, payableRes] = await Promise.all([
-      supabase.from('sale_invoices').select('total, payment_type').eq('date', date),
-      supabase
-        .from('expenses')
-        .select('amount')
-        .eq('date', date)
-        .eq('entry_type', 'expense')
-        .eq('scope', 'daily'),
-      supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
-      supabase
-        .from('daily_closing')
-        .select('actual_cash_counted')
-        .lt('date', date)
-        .order('date', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase.from('v_customer_outstanding').select('outstanding'),
-      supabase.from('v_supplier_outstanding').select('outstanding'),
-    ])
+    const [salesRes, pettyRes, closingRes, prevClosingRes, outstandingRes, payableRes, creditPaymentsRes] =
+      await Promise.all([
+        supabase.from('sale_invoices').select('total, payment_type').eq('date', date),
+        supabase
+          .from('expenses')
+          .select('amount')
+          .eq('date', date)
+          .eq('entry_type', 'expense')
+          .eq('scope', 'daily'),
+        supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
+        supabase
+          .from('daily_closing')
+          .select('actual_cash_counted')
+          .lt('date', date)
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase.from('v_customer_outstanding').select('outstanding'),
+        supabase.from('v_supplier_outstanding').select('outstanding'),
+        supabase.from('customer_payments').select('amount, payment_type').eq('date', date),
+      ])
 
     const sales = salesRes.data ?? []
     setCashSales(sales.filter((s) => s.payment_type === 'Cash').reduce((sum, s) => sum + s.total, 0))
@@ -58,6 +61,9 @@ export default function Closing() {
     setCreditSales(sales.filter((s) => s.payment_type === 'Credit').reduce((sum, s) => sum + s.total, 0))
 
     setPettyCashSpent((pettyRes.data ?? []).reduce((sum, p) => sum + p.amount, 0))
+    setCashCreditCollected(
+      (creditPaymentsRes.data ?? []).filter((p) => p.payment_type === 'Cash').reduce((sum, p) => sum + p.amount, 0)
+    )
     setOpeningCash(prevClosingRes.data?.actual_cash_counted ?? 0)
 
     if (closingRes.data) {
@@ -77,7 +83,7 @@ export default function Closing() {
   }
 
   const cashSalesNum = cashSales
-  const expectedCash = openingCash + cashSalesNum - pettyCashSpent
+  const expectedCash = openingCash + cashSalesNum + cashCreditCollected - pettyCashSpent
   const variance = actualCounted === '' ? null : Number(actualCounted) - expectedCash
 
   async function handleSave(e) {
@@ -152,7 +158,11 @@ export default function Closing() {
                 <td>{formatMoney(cashSalesNum)}</td>
               </tr>
               <tr>
-                <td>− Petty Cash Spent Today</td>
+                <td>+ Cash Collected from Old Credit Today</td>
+                <td>{formatMoney(cashCreditCollected)}</td>
+              </tr>
+              <tr>
+                <td>− Daily Expenses Today</td>
                 <td>{formatMoney(pettyCashSpent)}</td>
               </tr>
               <tr style={{ fontWeight: 700 }}>

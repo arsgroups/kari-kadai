@@ -61,6 +61,9 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       invoiceNumber: p.sale_invoices?.invoice_number ?? '—',
     }))
     const creditCollectedToday = creditPaymentRows.reduce((sum, p) => sum + p.amount, 0)
+    const cashCreditCollected = creditPaymentRows
+      .filter((p) => p.payment_type === 'Cash')
+      .reduce((sum, p) => sum + p.amount, 0)
 
     const purchaseRows = (purchases ?? []).map((p) => ({ ...p, supplierName: p.suppliers?.name ?? '—' }))
     const totalPurchases = purchaseRows.reduce((sum, p) => sum + p.total, 0)
@@ -69,7 +72,9 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     const totalExpenses = expenseEntries.reduce((sum, e) => sum + e.amount, 0)
 
     const openingCash = prevClosing?.actual_cash_counted ?? 0
-    const expectedCash = openingCash + cashSales - totalExpenses
+    // Cash physically in the till also includes any old credit collected in
+    // cash today, not just today's new Cash-channel sales.
+    const expectedCash = openingCash + cashSales + cashCreditCollected - totalExpenses
     const actualCash = closingRow?.actual_cash_counted ?? null
     const variance = actualCash === null ? null : round2(actualCash - expectedCash)
 
@@ -81,6 +86,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       totalSales,
       creditPaymentRows,
       creditCollectedToday,
+      cashCreditCollected,
       purchaseRows,
       totalPurchases,
       expenseEntries,
@@ -193,6 +199,8 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     doc.text(`Opening Cash: ${formatMoney(data.openingCash)}`, 14, y)
     y += 5
     doc.text(`+ Cash Sales Today: ${formatMoney(data.cashSales)}`, 14, y)
+    y += 5
+    doc.text(`+ Cash Collected from Old Credit Today: ${formatMoney(data.cashCreditCollected)}`, 14, y)
     y += 5
     doc.text(`- Daily Expenses: ${formatMoney(data.totalExpenses)}`, 14, y)
     y += 6
@@ -422,6 +430,10 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
             <tr>
               <td>+ Cash Sales Today</td>
               <td>{formatMoney(data.cashSales)}</td>
+            </tr>
+            <tr>
+              <td>+ Cash Collected from Old Credit Today</td>
+              <td>{formatMoney(data.cashCreditCollected)}</td>
             </tr>
             <tr>
               <td>− Daily Expenses</td>
