@@ -17,18 +17,24 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     setLoading(true)
     const [
       { data: sales },
+      { data: creditPayments },
       { data: purchases },
       { data: expenseRows },
       { data: closingRow },
       { data: prevClosing },
-      { data: outstandingRows },
-      { data: payments },
     ] = await Promise.all([
-      supabase.from('sale_invoices').select('total, subtotal, payment_type, channel').eq('date', date),
-      supabase.from('purchase_invoices').select('total, subtotal').eq('date', date),
+      supabase
+        .from('sale_invoices')
+        .select('invoice_number, total, payment_type, channel, customers(name)')
+        .eq('date', date),
+      supabase
+        .from('customer_payments')
+        .select('amount, payment_type, note, customers(name), sale_invoices(invoice_number)')
+        .eq('date', date),
+      supabase.from('purchase_invoices').select('invoice_number, total, payment_type, suppliers(name)').eq('date', date),
       supabase
         .from('expenses')
-        .select('amount, entry_type, expense_categories(name)')
+        .select('description, amount, entry_type, expense_categories(name)')
         .eq('date', date)
         .eq('scope', 'daily'),
       supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
@@ -39,55 +45,50 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
         .order('date', { ascending: false })
         .limit(1)
         .maybeSingle(),
-      supabase.from('v_customer_outstanding').select('outstanding'),
-      supabase.from('customer_payments').select('amount').eq('date', date),
     ])
 
-    const salesRows = sales ?? []
+    const salesRows = (sales ?? [])
+      .map((s) => ({ ...s, customerName: s.customers?.name ?? 'Counter Sale' }))
+      .sort((a, b) => a.customerName.localeCompare(b.customerName))
     const cashSales = salesRows.filter((s) => s.payment_type === 'Cash').reduce((sum, s) => sum + s.total, 0)
     const bankSales = salesRows.filter((s) => s.payment_type === 'Bank').reduce((sum, s) => sum + s.total, 0)
     const creditSales = salesRows.filter((s) => s.payment_type === 'Credit').reduce((sum, s) => sum + s.total, 0)
     const totalSales = cashSales + bankSales + creditSales
 
-    const byChannel = {}
-    salesRows.forEach((s) => {
-      byChannel[s.channel] = (byChannel[s.channel] ?? 0) + s.total
-    })
+    const creditPaymentRows = (creditPayments ?? []).map((p) => ({
+      ...p,
+      customerName: p.customers?.name ?? '—',
+      invoiceNumber: p.sale_invoices?.invoice_number ?? '—',
+    }))
+    const creditCollectedToday = creditPaymentRows.reduce((sum, p) => sum + p.amount, 0)
 
-    const purchaseRows = purchases ?? []
+    const purchaseRows = (purchases ?? []).map((p) => ({ ...p, supplierName: p.suppliers?.name ?? '—' }))
     const totalPurchases = purchaseRows.reduce((sum, p) => sum + p.total, 0)
 
     const expenseEntries = (expenseRows ?? []).filter((e) => e.entry_type === 'expense')
     const totalExpenses = expenseEntries.reduce((sum, e) => sum + e.amount, 0)
-    const byCategory = {}
-    expenseEntries.forEach((e) => {
-      const name = e.expense_categories?.name ?? 'Uncategorized'
-      byCategory[name] = (byCategory[name] ?? 0) + e.amount
-    })
 
     const openingCash = prevClosing?.actual_cash_counted ?? 0
     const expectedCash = openingCash + cashSales - totalExpenses
     const actualCash = closingRow?.actual_cash_counted ?? null
     const variance = actualCash === null ? null : round2(actualCash - expectedCash)
 
-    const totalOutstanding = (outstandingRows ?? []).reduce((sum, r) => sum + r.outstanding, 0)
-    const creditCollectedToday = (payments ?? []).reduce((sum, p) => sum + p.amount, 0)
-
     setData({
+      salesRows,
       cashSales,
       bankSales,
       creditSales,
       totalSales,
-      byChannel,
+      creditPaymentRows,
+      creditCollectedToday,
+      purchaseRows,
       totalPurchases,
+      expenseEntries,
       totalExpenses,
-      byCategory,
       openingCash,
       expectedCash,
       actualCash,
       variance,
-      totalOutstanding,
-      creditCollectedToday,
     })
     setLoading(false)
   }
@@ -104,59 +105,106 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     doc.setFontSize(9)
     doc.text(`UEN: ${COMPANY.uen}`, 14, 23)
     doc.setFontSize(12)
-    doc.text('DAILY CLOSING REPORT', 14, 31)
+    doc.text('DAILY REPORT', 14, 31)
     doc.setFontSize(10)
     doc.text(`Date: ${formatDate(date)}`, 14, 38)
     doc.text(`Operator: ${operatorEmail}`, 14, 43)
     doc.text(`Printed on: ${new Date().toLocaleString('en-SG')}`, 14, 48)
 
-    autoTable(doc, {
-      startY: 55,
-      head: [['Summary', 'Amount (SGD)']],
-      body: [
-        ['Cash Sales', formatMoney(data.cashSales)],
-        ['Bank Sales', formatMoney(data.bankSales)],
-        ['Credit Sales', formatMoney(data.creditSales)],
-        ['Total Sales', formatMoney(data.totalSales)],
-        ['Total Purchases', formatMoney(data.totalPurchases)],
-        ['Total Expenses', formatMoney(data.totalExpenses)],
-        ['Outstanding Credit (all customers)', formatMoney(data.totalOutstanding)],
-        ['Credit Collected Today', formatMoney(data.creditCollectedToday)],
-        ['Opening Cash', formatMoney(data.openingCash)],
-        ['Expected Cash', formatMoney(data.expectedCash)],
-        ['Actual Cash Counted', data.actualCash === null ? 'Not entered' : formatMoney(data.actualCash)],
-        ['Variance', data.variance === null ? '—' : formatMoney(data.variance)],
-      ],
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [122, 31, 31] },
-    })
-
-    let y = doc.lastAutoTable.finalY + 8
+    let y = 55
     doc.setFontSize(11)
-    doc.text('Sales Breakdown by Channel', 14, y)
+    doc.text('1. Today\'s Sales by Customer', 14, y)
     autoTable(doc, {
       startY: y + 4,
-      head: [['Channel', 'Amount']],
-      body: Object.entries(data.byChannel).map(([k, v]) => [k, formatMoney(v)]),
+      head: [['Customer', 'Channel', 'Invoice Total', 'Status']],
+      body: data.salesRows.length
+        ? data.salesRows.map((s) => [
+            s.customerName,
+            s.channel,
+            formatMoney(s.total),
+            s.payment_type === 'Credit' ? 'Credit' : 'Paid',
+          ])
+        : [['No sales recorded', '', '', '']],
       styles: { fontSize: 9 },
       headStyles: { fillColor: [122, 31, 31] },
     })
 
     y = doc.lastAutoTable.finalY + 8
     doc.setFontSize(11)
-    doc.text('Expense Breakdown by Category', 14, y)
+    doc.text('2. Old Credit Collected Today', 14, y)
     autoTable(doc, {
       startY: y + 4,
-      head: [['Category', 'Amount']],
-      body:
-        Object.entries(data.byCategory).length > 0
-          ? Object.entries(data.byCategory).map(([k, v]) => [k, formatMoney(v)])
-          : [['No expenses logged', '']],
+      head: [['Customer', 'Invoice #', 'Method', 'Amount']],
+      body: data.creditPaymentRows.length
+        ? data.creditPaymentRows.map((p) => [p.customerName, p.invoiceNumber, p.payment_type, formatMoney(p.amount)])
+        : [['No credit collected today', '', '', '']],
       styles: { fontSize: 9 },
       headStyles: { fillColor: [122, 31, 31] },
     })
 
-    doc.save(`daily-closing-${date}.pdf`)
+    y = doc.lastAutoTable.finalY + 8
+    doc.setFontSize(10)
+    doc.text(`Total Credit Collected Today: ${formatMoney(data.creditCollectedToday)}`, 14, y)
+    y += 6
+    doc.text(`Total Cash from Today's Sales: ${formatMoney(data.cashSales)}`, 14, y)
+    y += 5
+    doc.text(`Total Bank from Today's Sales: ${formatMoney(data.bankSales)}`, 14, y)
+    y += 5
+    doc.text(`Total Credit from Today's Sales (still owed): ${formatMoney(data.creditSales)}`, 14, y)
+    y += 5
+    doc.setFontSize(10.5)
+    doc.text(`Total Sales: ${formatMoney(data.totalSales)}`, 14, y)
+
+    y += 9
+    doc.setFontSize(11)
+    doc.text('3. Today\'s Purchases', 14, y)
+    autoTable(doc, {
+      startY: y + 4,
+      head: [['Supplier', 'Invoice #', 'Amount', 'Status']],
+      body: data.purchaseRows.length
+        ? data.purchaseRows.map((p) => [
+            p.supplierName,
+            p.invoice_number,
+            formatMoney(p.total),
+            p.payment_type === 'Credit' ? 'Credit' : 'Paid',
+          ])
+        : [['No purchases recorded', '', '', '']],
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [122, 31, 31] },
+    })
+    y = doc.lastAutoTable.finalY + 6
+    doc.setFontSize(10.5)
+    doc.text(`Total Purchases: ${formatMoney(data.totalPurchases)}`, 14, y)
+
+    y += 9
+    doc.setFontSize(11)
+    doc.text('4. Cash in Hand', 14, y)
+    autoTable(doc, {
+      startY: y + 4,
+      head: [['Description', 'Category', 'Amount']],
+      body: data.expenseEntries.length
+        ? data.expenseEntries.map((e) => [e.description || '—', e.expense_categories?.name ?? 'Uncategorized', formatMoney(e.amount)])
+        : [['No expenses logged', '', '']],
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [122, 31, 31] },
+    })
+    y = doc.lastAutoTable.finalY + 6
+    doc.setFontSize(10)
+    doc.text(`Opening Cash: ${formatMoney(data.openingCash)}`, 14, y)
+    y += 5
+    doc.text(`+ Cash Sales Today: ${formatMoney(data.cashSales)}`, 14, y)
+    y += 5
+    doc.text(`- Daily Expenses: ${formatMoney(data.totalExpenses)}`, 14, y)
+    y += 6
+    doc.setFontSize(11)
+    doc.text(`= Total Cash in Hand (Expected): ${formatMoney(data.expectedCash)}`, 14, y)
+    y += 7
+    doc.setFontSize(10)
+    doc.text(`Actual Cash Counted: ${data.actualCash === null ? 'Not entered' : formatMoney(data.actualCash)}`, 14, y)
+    y += 5
+    doc.text(`Variance: ${data.variance === null ? '—' : formatMoney(data.variance)}`, 14, y)
+
+    doc.save(`daily-report-${date}.pdf`)
   }
 
   if (loading || !data) return <p className="muted">Loading report…</p>
@@ -189,8 +237,10 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
             </p>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <h1 style={{ margin: 0 }}>DAILY CLOSING REPORT</h1>
-            <p style={{ margin: '0.2rem 0' }}>Date: <strong>{formatDate(date)}</strong></p>
+            <h1 style={{ margin: 0 }}>DAILY REPORT</h1>
+            <p style={{ margin: '0.2rem 0' }}>
+              Date: <strong>{formatDate(date)}</strong>
+            </p>
             <p style={{ margin: '0.2rem 0' }}>Operator: {operatorEmail}</p>
             <p className="muted" style={{ margin: '0.2rem 0', fontSize: '0.85rem' }}>
               Printed on {new Date().toLocaleString('en-SG')}
@@ -198,63 +248,187 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
           </div>
         </div>
 
-        <h3>Summary</h3>
-        <p className="muted" style={{ fontSize: '0.8rem', marginTop: '-0.5rem' }}>
-          Expenses here cover daily/till spend only — recurring monthly bills (Salary, Rent, ...) are
-          tracked separately and included in the P&amp;L report instead.
-        </p>
+        <h3>1. Today's Sales by Customer</h3>
+        <table className="data-table" style={{ maxWidth: 640 }}>
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Channel</th>
+              <th>Invoice Total</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.salesRows.map((s) => (
+              <tr key={s.invoice_number}>
+                <td>{s.customerName}</td>
+                <td>{s.channel}</td>
+                <td>{formatMoney(s.total)}</td>
+                <td>
+                  <span className={s.payment_type === 'Credit' ? 'tag tag-warning' : 'tag tag-success'}>
+                    {s.payment_type === 'Credit' ? 'Credit' : 'Paid'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {data.salesRows.length === 0 && (
+              <tr>
+                <td colSpan={4} className="muted">
+                  No sales recorded.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
+        <h3>2. Old Credit Collected Today</h3>
+        <table className="data-table" style={{ maxWidth: 640 }}>
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Invoice #</th>
+              <th>Method</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.creditPaymentRows.map((p, i) => (
+              <tr key={i}>
+                <td>{p.customerName}</td>
+                <td>{p.invoiceNumber}</td>
+                <td>{p.payment_type}</td>
+                <td>{formatMoney(p.amount)}</td>
+              </tr>
+            ))}
+            {data.creditPaymentRows.length === 0 && (
+              <tr>
+                <td colSpan={4} className="muted">
+                  No credit collected today.
+                </td>
+              </tr>
+            )}
+          </tbody>
+          <tfoot>
+            <tr style={{ fontWeight: 700 }}>
+              <td colSpan={3}>Total Credit Collected Today</td>
+              <td>{formatMoney(data.creditCollectedToday)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
         <table className="data-table" style={{ maxWidth: 480 }}>
           <tbody>
             <tr>
-              <td>Cash Sales</td>
+              <td>Total Cash from Today's Sales</td>
               <td>{formatMoney(data.cashSales)}</td>
             </tr>
             <tr>
-              <td>Bank Sales</td>
+              <td>Total Bank from Today's Sales</td>
               <td>{formatMoney(data.bankSales)}</td>
             </tr>
             <tr>
-              <td>Credit Sales</td>
+              <td>Total Credit from Today's Sales (still owed)</td>
               <td>{formatMoney(data.creditSales)}</td>
             </tr>
             <tr style={{ fontWeight: 700 }}>
               <td>Total Sales</td>
               <td>{formatMoney(data.totalSales)}</td>
             </tr>
+          </tbody>
+        </table>
+
+        <h3>3. Today's Purchases</h3>
+        <table className="data-table" style={{ maxWidth: 640 }}>
+          <thead>
             <tr>
-              <td>Total Purchases</td>
-              <td>{formatMoney(data.totalPurchases)}</td>
+              <th>Supplier</th>
+              <th>Invoice #</th>
+              <th>Amount</th>
+              <th>Status</th>
             </tr>
+          </thead>
+          <tbody>
+            {data.purchaseRows.map((p) => (
+              <tr key={p.invoice_number}>
+                <td>{p.supplierName}</td>
+                <td>{p.invoice_number}</td>
+                <td>{formatMoney(p.total)}</td>
+                <td>
+                  <span className={p.payment_type === 'Credit' ? 'tag tag-warning' : 'tag tag-success'}>
+                    {p.payment_type === 'Credit' ? 'Credit' : 'Paid'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {data.purchaseRows.length === 0 && (
+              <tr>
+                <td colSpan={4} className="muted">
+                  No purchases recorded.
+                </td>
+              </tr>
+            )}
+          </tbody>
+          <tfoot>
+            <tr style={{ fontWeight: 700 }}>
+              <td colSpan={2}>Total Purchases</td>
+              <td colSpan={2}>{formatMoney(data.totalPurchases)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <h3>4. Cash in Hand</h3>
+        <p className="muted" style={{ fontSize: '0.8rem', marginTop: '-0.5rem' }}>
+          Daily expenses only — recurring monthly bills (Salary, Rent, ...) are tracked separately in the
+          P&amp;L report instead.
+        </p>
+        <table className="data-table" style={{ maxWidth: 640 }}>
+          <thead>
             <tr>
-              <td>Total Expenses</td>
+              <th>Description</th>
+              <th>Category</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.expenseEntries.map((e, i) => (
+              <tr key={i}>
+                <td>{e.description || '—'}</td>
+                <td>{e.expense_categories?.name ?? 'Uncategorized'}</td>
+                <td>{formatMoney(e.amount)}</td>
+              </tr>
+            ))}
+            {data.expenseEntries.length === 0 && (
+              <tr>
+                <td colSpan={3} className="muted">
+                  No expenses logged.
+                </td>
+              </tr>
+            )}
+          </tbody>
+          <tfoot>
+            <tr style={{ fontWeight: 700 }}>
+              <td colSpan={2}>Total Daily Expenses</td>
               <td>{formatMoney(data.totalExpenses)}</td>
             </tr>
-          </tbody>
+          </tfoot>
         </table>
 
-        <h3>Outstanding Credit</h3>
-        <table className="data-table" style={{ maxWidth: 480 }}>
-          <tbody>
-            <tr>
-              <td>Outstanding Credit (all customers, as of today)</td>
-              <td>{formatMoney(data.totalOutstanding)}</td>
-            </tr>
-            <tr>
-              <td>Credit Collected Today</td>
-              <td>{formatMoney(data.creditCollectedToday)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <h3>Cash Collection</h3>
-        <table className="data-table" style={{ maxWidth: 480 }}>
+        <table className="data-table" style={{ maxWidth: 480, marginTop: '1rem' }}>
           <tbody>
             <tr>
               <td>Opening Cash</td>
               <td>{formatMoney(data.openingCash)}</td>
             </tr>
             <tr>
-              <td>Expected Closing Cash</td>
+              <td>+ Cash Sales Today</td>
+              <td>{formatMoney(data.cashSales)}</td>
+            </tr>
+            <tr>
+              <td>− Daily Expenses</td>
+              <td>{formatMoney(data.totalExpenses)}</td>
+            </tr>
+            <tr style={{ fontWeight: 700 }}>
+              <td>= Total Cash in Hand (Expected)</td>
               <td>{formatMoney(data.expectedCash)}</td>
             </tr>
             <tr>
@@ -273,44 +447,6 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
                 )}
               </td>
             </tr>
-          </tbody>
-        </table>
-
-        <h3>Sales Breakdown by Channel</h3>
-        <table className="data-table" style={{ maxWidth: 480 }}>
-          <tbody>
-            {Object.entries(data.byChannel).map(([k, v]) => (
-              <tr key={k}>
-                <td>{k}</td>
-                <td>{formatMoney(v)}</td>
-              </tr>
-            ))}
-            {Object.keys(data.byChannel).length === 0 && (
-              <tr>
-                <td colSpan={2} className="muted">
-                  No sales recorded.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-
-        <h3>Expense Breakdown by Category</h3>
-        <table className="data-table" style={{ maxWidth: 480 }}>
-          <tbody>
-            {Object.entries(data.byCategory).map(([k, v]) => (
-              <tr key={k}>
-                <td>{k}</td>
-                <td>{formatMoney(v)}</td>
-              </tr>
-            ))}
-            {Object.keys(data.byCategory).length === 0 && (
-              <tr>
-                <td colSpan={2} className="muted">
-                  No expenses logged.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
 
