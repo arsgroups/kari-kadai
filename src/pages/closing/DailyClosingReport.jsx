@@ -29,7 +29,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
         .eq('date', date),
       supabase
         .from('customer_payments')
-        .select('amount, payment_type, note, customers(name), sale_invoices(invoice_number)')
+        .select('amount, payment_type, note, customers(name), sale_invoices(invoice_number, date)')
         .eq('date', date),
       supabase.from('purchase_invoices').select('invoice_number, total, payment_type, suppliers(name)').eq('date', date),
       supabase
@@ -47,23 +47,40 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
         .maybeSingle(),
     ])
 
+    // A payment is "old credit collected" only if it's settling an invoice
+    // from a previous day. A Credit invoice raised and paid off on the same
+    // day isn't old credit -- it shows as Paid in today's sales instead, and
+    // its cash (if any) is still cash in hand today either way.
+    const creditPaymentRowsAll = (creditPayments ?? []).map((p) => ({
+      ...p,
+      customerName: p.customers?.name ?? '—',
+      invoiceNumber: p.sale_invoices?.invoice_number ?? '—',
+      isSameDay: p.sale_invoices?.date === date,
+    }))
+    const oldCreditPaymentRows = creditPaymentRowsAll.filter((p) => !p.isSameDay)
+    const creditCollectedToday = oldCreditPaymentRows.reduce((sum, p) => sum + p.amount, 0)
+    const cashCreditCollected = creditPaymentRowsAll
+      .filter((p) => p.payment_type === 'Cash')
+      .reduce((sum, p) => sum + p.amount, 0)
+
+    const sameDayPaidByInvoice = {}
+    creditPaymentRowsAll
+      .filter((p) => p.isSameDay)
+      .forEach((p) => {
+        sameDayPaidByInvoice[p.invoiceNumber] = (sameDayPaidByInvoice[p.invoiceNumber] ?? 0) + p.amount
+      })
+
     const salesRows = (sales ?? [])
-      .map((s) => ({ ...s, customerName: s.customers?.name ?? 'Counter Sale' }))
+      .map((s) => ({
+        ...s,
+        customerName: s.customers?.name ?? 'Counter Sale',
+        isPaid: s.payment_type !== 'Credit' || (sameDayPaidByInvoice[s.invoice_number] ?? 0) >= s.total - 0.01,
+      }))
       .sort((a, b) => a.customerName.localeCompare(b.customerName))
     const cashSales = salesRows.filter((s) => s.payment_type === 'Cash').reduce((sum, s) => sum + s.total, 0)
     const bankSales = salesRows.filter((s) => s.payment_type === 'Bank').reduce((sum, s) => sum + s.total, 0)
     const creditSales = salesRows.filter((s) => s.payment_type === 'Credit').reduce((sum, s) => sum + s.total, 0)
     const totalSales = cashSales + bankSales + creditSales
-
-    const creditPaymentRows = (creditPayments ?? []).map((p) => ({
-      ...p,
-      customerName: p.customers?.name ?? '—',
-      invoiceNumber: p.sale_invoices?.invoice_number ?? '—',
-    }))
-    const creditCollectedToday = creditPaymentRows.reduce((sum, p) => sum + p.amount, 0)
-    const cashCreditCollected = creditPaymentRows
-      .filter((p) => p.payment_type === 'Cash')
-      .reduce((sum, p) => sum + p.amount, 0)
 
     const purchaseRows = (purchases ?? []).map((p) => ({ ...p, supplierName: p.suppliers?.name ?? '—' }))
     const totalPurchases = purchaseRows.reduce((sum, p) => sum + p.total, 0)
@@ -84,7 +101,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       bankSales,
       creditSales,
       totalSales,
-      creditPaymentRows,
+      creditPaymentRows: oldCreditPaymentRows,
       creditCollectedToday,
       cashCreditCollected,
       purchaseRows,
@@ -128,7 +145,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
             s.customerName,
             s.channel,
             formatMoney(s.total),
-            s.payment_type === 'Credit' ? 'Credit' : 'Paid',
+            s.isPaid ? 'Paid' : 'Credit',
           ])
         : [['No sales recorded', '', '', '']],
       styles: { fontSize: 9 },
@@ -273,8 +290,8 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
                 <td>{s.channel}</td>
                 <td>{formatMoney(s.total)}</td>
                 <td>
-                  <span className={s.payment_type === 'Credit' ? 'tag tag-warning' : 'tag tag-success'}>
-                    {s.payment_type === 'Credit' ? 'Credit' : 'Paid'}
+                  <span className={s.isPaid ? 'tag tag-success' : 'tag tag-warning'}>
+                    {s.isPaid ? 'Paid' : 'Credit'}
                   </span>
                 </td>
               </tr>
