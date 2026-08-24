@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { fetchRateHistory, buildRateResolver, round2 } from '../../lib/gst'
 import { toISODate, formatMoney } from '../../lib/format'
+import SearchableSelect from '../../components/SearchableSelect'
 
 function emptyLine() {
   return {
@@ -184,14 +185,12 @@ export default function NewPurchaseInvoiceTab() {
       <div className="form-grid">
         <label>
           Supplier
-          <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} required>
-            <option value="">Select…</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={supplierId}
+            onChange={setSupplierId}
+            placeholder="Select supplier…"
+            options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+          />
         </label>
         <label>
           Invoice Number
@@ -244,14 +243,12 @@ export default function NewPurchaseInvoiceTab() {
           {lines.map((line) => (
             <tr key={line.key}>
               <td>
-                <select value={line.product_id} onChange={(e) => handleProductChange(line.key, e.target.value)}>
-                  <option value="">Select item…</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  value={line.product_id}
+                  onChange={(id) => handleProductChange(line.key, id)}
+                  placeholder="Select item…"
+                  options={products.map((p) => ({ value: p.id, label: p.name }))}
+                />
               </td>
               <td>
                 <input

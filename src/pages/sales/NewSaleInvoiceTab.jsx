@@ -4,6 +4,7 @@ import { fetchRateHistory, buildRateResolver, round2, roundSurcharge } from '../
 import { conversionFactor } from '../../lib/units'
 import { toISODate, formatMoney } from '../../lib/format'
 import SaleInvoiceView from './SaleInvoiceView'
+import SearchableSelect from '../../components/SearchableSelect'
 
 function emptyLine() {
   return {
@@ -554,15 +555,15 @@ export default function NewSaleInvoiceTab() {
                     <span className="tag tag-success">FREE — Promo</span>
                   </span>
                 ) : (
-                  <select value={line.product_id} onChange={(e) => handleProductChange(line.key, e.target.value)}>
-                    <option value="">Select item…</option>
-                    {channelProducts.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.channelName}
-                        {p.cutFrom ? ` (from ${p.cutFrom})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={line.product_id}
+                    onChange={(id) => handleProductChange(line.key, id)}
+                    placeholder="Select item…"
+                    options={channelProducts.map((p) => ({
+                      value: p.id,
+                      label: p.channelName + (p.cutFrom ? ` (from ${p.cutFrom})` : ''),
+                    }))}
+                  />
                 )}
               </td>
               <td>
