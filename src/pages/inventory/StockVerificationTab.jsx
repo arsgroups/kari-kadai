@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, toISODate } from '../../lib/format'
+import SearchableSelect from '../../components/SearchableSelect'
 
 const emptyForm = { date: toISODate(), product_id: '', counted_qty: '', note: '' }
 
@@ -90,14 +91,12 @@ export default function StockVerificationTab() {
           </label>
           <label>
             Product
-            <select value={form.product_id} onChange={(e) => handleProductChange(e.target.value)} required>
-              <option value="">Select…</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={form.product_id}
+              onChange={handleProductChange}
+              placeholder="Select…"
+              options={products.map((p) => ({ value: p.id, label: p.name }))}
+            />
           </label>
           <label>
             System Stock
