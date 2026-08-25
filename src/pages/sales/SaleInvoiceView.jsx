@@ -81,8 +81,8 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   const isRestaurant = invoice?.channel === 'Restaurant'
   const showSurcharge = isRestaurant && Number(invoice?.gst_amount) > 0
 
-  async function downloadPdf() {
-    if (!invoice) return
+  async function buildPdf() {
+    if (!invoice) return null
     const showDiscount = items.some((it) => Number(it.discount) > 0)
     const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
       import('jspdf'),
@@ -183,7 +183,23 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
       doc.addImage(footerInfo.dataUrl, footerInfo.format, 14, y + 6, footerWidth, footerHeight)
     }
 
+    return doc
+  }
+
+  async function downloadPdf() {
+    const doc = await buildPdf()
+    if (!doc) return
     doc.save(`${invoice.invoice_number}.pdf`)
+  }
+
+  // Printing the PDF itself (rather than the live HTML page) avoids the
+  // browser's own page header/footer (URL, date/time) that window.print()
+  // adds to a printed webpage -- a PDF prints as-is.
+  async function handlePrint() {
+    const doc = await buildPdf()
+    if (!doc) return
+    doc.autoPrint()
+    window.open(doc.output('bloburl'), '_blank')
   }
 
   async function startEdit() {
@@ -415,7 +431,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   return (
     <div>
       <div className="toolbar no-print">
-        <button className="btn" onClick={() => window.print()}>
+        <button className="btn" onClick={handlePrint}>
           Print
         </button>
         <button className="btn-secondary" onClick={downloadPdf}>
