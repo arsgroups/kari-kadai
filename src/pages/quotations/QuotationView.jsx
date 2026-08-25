@@ -4,6 +4,7 @@ import { formatDate, formatMoney, toISODate } from '../../lib/format'
 import { COMPANY } from '../../lib/companyInfo'
 import invoiceHeaderImg from '../../assets/invoice-header.jpg'
 import { useAuth } from '../../contexts/AuthContext'
+import SearchableSelect from '../../components/SearchableSelect'
 
 const VALID_DAYS = 10
 
@@ -47,6 +48,13 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState(null)
+  const [editItems, setEditItems] = useState([])
+  const [editProducts, setEditProducts] = useState([]) // channel-visible products, for the Add Item picker
+  const [newItemProduct, setNewItemProduct] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState('')
 
   useEffect(() => {
     load()
@@ -76,6 +84,161 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
   // than a bare "Kg" / "Unit".
   function unitLabel(unit) {
     return unit ? `1 ${unit}` : ''
+  }
+
+  async function startEdit() {
+    setEditError('')
+    setEditForm({
+      date: quotation.date,
+      channel: quotation.channel,
+      customer_name: quotation.customer_name || '',
+      customer_address: quotation.customer_address || '',
+      customer_contact: quotation.customer_contact || '',
+      sent_by_name: quotation.sent_by_name || '',
+      sent_by_contact: quotation.sent_by_contact || '',
+    })
+    setEditItems(
+      items.map((it) => ({
+        key: it.id,
+        itemId: it.id,
+        product_id: it.product_id,
+        display_name: it.display_name,
+        unit: it.unit || '',
+        listed_price: it.listed_price ?? '',
+        special_price: it.special_price ?? '',
+      }))
+    )
+    setNewItemProduct('')
+    const [{ data: productData }, { data: channelData }] = await Promise.all([
+      supabase
+        .from('products')
+        .select('id, name, sales_unit, default_selling_price, restaurant_price, counter_price, supplier_only')
+        .eq('is_active', true)
+        .order('name'),
+      supabase.from('product_channel_config').select('product_id, channel, display_name, is_visible'),
+    ])
+    const channelMap = {}
+    ;(channelData ?? []).forEach((row) => {
+      if (!channelMap[row.product_id]) channelMap[row.product_id] = {}
+      channelMap[row.product_id][row.channel] = { display_name: row.display_name, is_visible: row.is_visible }
+    })
+    const products = (productData ?? [])
+      .filter((p) => !p.supplier_only && channelMap[p.id]?.[quotation.channel]?.is_visible !== false)
+      .map((p) => ({
+        ...p,
+        channelName: channelMap[p.id]?.[quotation.channel]?.display_name || p.name,
+        listedPrice: (quotation.channel === 'Restaurant' ? p.restaurant_price : p.counter_price) ?? p.default_selling_price,
+      }))
+    setEditProducts(products)
+    setEditing(true)
+  }
+
+  function updateEditItem(key, patch) {
+    setEditItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...patch } : it)))
+  }
+
+  function removeEditItem(key) {
+    setEditItems((prev) => prev.filter((it) => it.key !== key))
+  }
+
+  function addEditItem() {
+    const product = editProducts.find((p) => p.id === newItemProduct)
+    if (!product) return
+    setEditItems((prev) => [
+      ...prev,
+      {
+        key: crypto.randomUUID(),
+        itemId: null,
+        product_id: product.id,
+        display_name: product.channelName,
+        unit: product.sales_unit || '',
+        listed_price: product.listedPrice ?? '',
+        special_price: '',
+      },
+    ])
+    setNewItemProduct('')
+  }
+
+  async function handleSaveEdit() {
+    setEditError('')
+    if (!editForm.customer_name.trim()) {
+      setEditError('Enter the customer name.')
+      return
+    }
+    if (editItems.length === 0) {
+      setEditError('At least one item must remain in the quotation.')
+      return
+    }
+    setEditSaving(true)
+
+    const { error: quoError } = await supabase
+      .from('quotations')
+      .update({
+        date: editForm.date,
+        channel: editForm.channel,
+        customer_name: editForm.customer_name,
+        customer_address: editForm.customer_address || null,
+        customer_contact: editForm.customer_contact || null,
+        sent_by_name: editForm.sent_by_name || null,
+        sent_by_contact: editForm.sent_by_contact || null,
+      })
+      .eq('id', quotationId)
+    if (quoError) {
+      setEditSaving(false)
+      setEditError(quoError.message)
+      return
+    }
+
+    const keptItemIds = new Set(editItems.filter((it) => it.itemId).map((it) => it.itemId))
+    const removedIds = items.filter((it) => !keptItemIds.has(it.id)).map((it) => it.id)
+    if (removedIds.length) {
+      const { error: delError } = await supabase.from('quotation_items').delete().in('id', removedIds)
+      if (delError) {
+        setEditSaving(false)
+        setEditError(delError.message)
+        return
+      }
+    }
+
+    for (const it of editItems.filter((it) => it.itemId)) {
+      const { error } = await supabase
+        .from('quotation_items')
+        .update({
+          display_name: it.display_name,
+          unit: it.unit || null,
+          listed_price: it.listed_price === '' ? null : Number(it.listed_price),
+          special_price: it.special_price === '' ? null : Number(it.special_price),
+        })
+        .eq('id', it.itemId)
+      if (error) {
+        setEditSaving(false)
+        setEditError(error.message)
+        return
+      }
+    }
+
+    const newRows = editItems
+      .filter((it) => !it.itemId)
+      .map((it) => ({
+        quotation_id: quotationId,
+        product_id: it.product_id,
+        display_name: it.display_name,
+        unit: it.unit || null,
+        listed_price: it.listed_price === '' ? null : Number(it.listed_price),
+        special_price: it.special_price === '' ? null : Number(it.special_price),
+      }))
+    if (newRows.length) {
+      const { error: insError } = await supabase.from('quotation_items').insert(newRows)
+      if (insError) {
+        setEditSaving(false)
+        setEditError(insError.message)
+        return
+      }
+    }
+
+    setEditSaving(false)
+    setEditing(false)
+    load()
   }
 
   async function downloadPdf() {
@@ -161,6 +324,11 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
         <button className="btn-secondary" onClick={downloadPdf}>
           Download PDF
         </button>
+        {!editing && (
+          <button className="btn-secondary" onClick={startEdit}>
+            Edit Quotation
+          </button>
+        )}
         {isAdmin && (
           <button className="btn-danger" disabled={deleting} onClick={handleDelete}>
             {deleting ? 'Deleting…' : 'Delete Quotation'}
@@ -174,7 +342,158 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
       </div>
       {deleteError && <div className="inline-error no-print">{deleteError}</div>}
 
-      <div className="invoice-sheet">
+      {editing && editForm && (
+        <div className="card no-print">
+          <h3>Edit Quotation {quotation.quotation_number}</h3>
+          <p className="muted" style={{ fontSize: '0.85rem' }}>
+            A quotation has no stock or accounting impact, so items and prices can be freely adjusted, added,
+            or removed.
+          </p>
+          <div className="form-grid">
+            <label>
+              Channel
+              <select value={editForm.channel} onChange={(e) => setEditForm({ ...editForm, channel: e.target.value })}>
+                <option>Restaurant</option>
+                <option>Home Delivery</option>
+                <option>Counter</option>
+              </select>
+            </label>
+            <label>
+              Date
+              <input
+                type="date"
+                value={editForm.date}
+                onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+              />
+            </label>
+            <label>
+              Customer Name
+              <input
+                value={editForm.customer_name}
+                onChange={(e) => setEditForm({ ...editForm, customer_name: e.target.value })}
+              />
+            </label>
+            <label>
+              Customer Address
+              <textarea
+                rows={2}
+                value={editForm.customer_address}
+                onChange={(e) => setEditForm({ ...editForm, customer_address: e.target.value })}
+              />
+            </label>
+            <label>
+              Customer Contact
+              <input
+                value={editForm.customer_contact}
+                onChange={(e) => setEditForm({ ...editForm, customer_contact: e.target.value })}
+              />
+            </label>
+            <label>
+              Quotation Sent By
+              <input
+                value={editForm.sent_by_name}
+                onChange={(e) => setEditForm({ ...editForm, sent_by_name: e.target.value })}
+              />
+            </label>
+            <label>
+              Sender Contact Number
+              <input
+                value={editForm.sent_by_contact}
+                onChange={(e) => setEditForm({ ...editForm, sent_by_contact: e.target.value })}
+              />
+            </label>
+          </div>
+
+          <table className="data-table" style={{ marginTop: '1rem' }}>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Unit</th>
+                <th>Listed Price</th>
+                <th>Special Price</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {editItems.map((it) => (
+                <tr key={it.key}>
+                  <td>
+                    <input
+                      style={{ width: 180 }}
+                      value={it.display_name}
+                      onChange={(e) => updateEditItem(it.key, { display_name: e.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      style={{ width: 70 }}
+                      value={it.unit}
+                      onChange={(e) => updateEditItem(it.key, { unit: e.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      style={{ width: 90 }}
+                      value={it.listed_price}
+                      onChange={(e) => updateEditItem(it.key, { listed_price: e.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      style={{ width: 90 }}
+                      placeholder={it.listed_price !== '' ? String(it.listed_price) : ''}
+                      value={it.special_price}
+                      onChange={(e) => updateEditItem(it.key, { special_price: e.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <button type="button" className="btn-secondary" onClick={() => removeEditItem(it.key)}>
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {editItems.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted">
+                    No items — add one below.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <div className="toolbar" style={{ marginTop: '0.75rem' }}>
+            <SearchableSelect
+              value={newItemProduct}
+              onChange={setNewItemProduct}
+              options={editProducts.map((p) => ({ value: p.id, label: p.channelName }))}
+              placeholder="Select item to add…"
+            />
+            <button type="button" className="btn-secondary" disabled={!newItemProduct} onClick={addEditItem}>
+              + Add Item
+            </button>
+          </div>
+
+          <div className="toolbar" style={{ marginTop: '1rem' }}>
+            <button className="btn" disabled={editSaving} onClick={handleSaveEdit}>
+              {editSaving ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button className="btn-secondary" disabled={editSaving} onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </div>
+          {editError && <div className="inline-error">{editError}</div>}
+        </div>
+      )}
+
+      <div className="invoice-sheet" style={editing ? { display: 'none' } : undefined}>
         <img src={headerImageUrl} alt={COMPANY.name} className="invoice-banner" />
 
         <div className="invoice-meta-row">
