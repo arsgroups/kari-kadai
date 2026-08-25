@@ -26,10 +26,10 @@ export default function ItemMarginTab() {
     setLoading(true)
     // Only reads sale_invoice_items, so Historical Data Entry backfill (no
     // line items) never appears here -- this is already "current data only".
-    const [{ data: items }, { data: yieldConfigs }] = await Promise.all([
+    const [{ data: rawItems }, { data: yieldConfigs }] = await Promise.all([
       supabase
         .from('sale_invoice_items')
-        .select('product_id, quantity, amount, unit_cost, products(name), sale_invoices!inner(date)')
+        .select('id, product_id, quantity, amount, unit_cost, products(name), sale_invoices!inner(date)')
         .gte('sale_invoices.date', from)
         .lte('sale_invoices.date', to),
       supabase
@@ -39,6 +39,31 @@ export default function ItemMarginTab() {
         )
         .eq('is_active', true),
     ])
+
+    // A returned line is "a null sale" -- net its quantity/amount back out
+    // of the original sale_invoice_items row, regardless of which date the
+    // return itself happened on.
+    const itemIds = (rawItems ?? []).map((it) => it.id)
+    let returnedByItemId = {}
+    if (itemIds.length) {
+      const { data: returnRows } = await supabase
+        .from('sale_return_items')
+        .select('sale_invoice_item_id, quantity, amount')
+        .in('sale_invoice_item_id', itemIds)
+      ;(returnRows ?? []).forEach((r) => {
+        if (!returnedByItemId[r.sale_invoice_item_id]) returnedByItemId[r.sale_invoice_item_id] = { quantity: 0, amount: 0 }
+        returnedByItemId[r.sale_invoice_item_id].quantity += r.quantity
+        returnedByItemId[r.sale_invoice_item_id].amount += r.amount
+      })
+    }
+    const items = (rawItems ?? [])
+      .map((it) => {
+        const returned = returnedByItemId[it.id]
+        return returned
+          ? { ...it, quantity: round2(it.quantity - returned.quantity), amount: round2(it.amount - returned.amount) }
+          : it
+      })
+      .filter((it) => it.quantity > 0)
 
     const groups = (yieldConfigs ?? [])
       .map((g) => {
@@ -175,7 +200,8 @@ export default function ItemMarginTab() {
         </div>
         <p className="muted" style={{ fontSize: '0.8rem', marginTop: '0.75rem', marginBottom: 0 }}>
           Only reflects itemized (current-system) sales — Historical Data Entry backfill has no line
-          items, so it never appears here. Items cut from a purchased parent (e.g. a whole chicken cut
+          items, so it never appears here. Returned quantities/amounts are netted out of the original
+          line, so a return is never counted as a sale. Items cut from a purchased parent (e.g. a whole chicken cut
           into breast/thigh/wing) are grouped under that parent: since there's no stored yield ratio to
           split the parent's cost precisely per child, the parent header shows the parent's purchase cost
           against the <strong>combined</strong> revenue of all its children — the breakdown below it shows

@@ -49,18 +49,38 @@ export default function DashboardTab() {
   async function load() {
     setLoading(true)
     const since = daysAgo(60)
-    const [{ data: sales }, { data: purchases }, { data: saleItems }] = await Promise.all([
+    const [{ data: sales }, { data: purchases }, { data: rawSaleItems }] = await Promise.all([
       supabase.from('sale_invoices').select('date, total, channel').gte('date', toISODate(since)),
       supabase.from('purchase_invoices').select('date, total').gte('date', toISODate(since)),
       supabase
         .from('sale_invoice_items')
-        .select('amount, gst_amount, gst_applicable, products(name), sale_invoices!inner(date)')
+        .select('id, amount, gst_amount, gst_applicable, products(name), sale_invoices!inner(date)')
         .gte('sale_invoices.date', toISODate(since)),
     ])
 
     const salesRows = sales ?? []
     const purchaseRows = purchases ?? []
-    const saleItemRows = saleItems ?? []
+
+    // A returned line is a null sale -- net it back out before it feeds the
+    // product breakdown (the invoice-level charts above already reflect
+    // returns, since a return reduces the invoice's own total).
+    const itemIds = (rawSaleItems ?? []).map((it) => it.id)
+    let returnedByItemId = {}
+    if (itemIds.length) {
+      const { data: returnRows } = await supabase
+        .from('sale_return_items')
+        .select('sale_invoice_item_id, amount')
+        .in('sale_invoice_item_id', itemIds)
+      ;(returnRows ?? []).forEach((r) => {
+        returnedByItemId[r.sale_invoice_item_id] = (returnedByItemId[r.sale_invoice_item_id] ?? 0) + r.amount
+      })
+    }
+    const saleItemRows = (rawSaleItems ?? [])
+      .map((it) => {
+        const returned = returnedByItemId[it.id]
+        return returned ? { ...it, amount: it.amount - returned } : it
+      })
+      .filter((it) => it.amount > 0)
 
     // Daily trend, last 30 days
     const byDay = {}

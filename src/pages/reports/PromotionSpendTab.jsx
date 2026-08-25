@@ -27,13 +27,29 @@ export default function PromotionSpendTab() {
     // A promo "Buy X Get Y Free" line is saved with rate = 0 -- what we
     // "spent" giving it away is what it cost us (its unit_cost), since no
     // revenue came in for that line at all.
-    const { data } = await supabase
+    const { data: rawRows } = await supabase
       .from('sale_invoice_items')
-      .select('quantity, unit_cost, products(name), sale_invoices!inner(date, channel)')
+      .select('id, quantity, unit_cost, products(name), sale_invoices!inner(date, channel)')
       .eq('rate', 0)
       .gt('quantity', 0)
       .gte('sale_invoices.date', from)
       .lte('sale_invoices.date', to)
+
+    // A returned freebie is a null giveaway -- net it back out.
+    const itemIds = (rawRows ?? []).map((it) => it.id)
+    let returnedByItemId = {}
+    if (itemIds.length) {
+      const { data: returnRows } = await supabase
+        .from('sale_return_items')
+        .select('sale_invoice_item_id, quantity')
+        .in('sale_invoice_item_id', itemIds)
+      ;(returnRows ?? []).forEach((r) => {
+        returnedByItemId[r.sale_invoice_item_id] = (returnedByItemId[r.sale_invoice_item_id] ?? 0) + r.quantity
+      })
+    }
+    const data = (rawRows ?? [])
+      .map((it) => ({ ...it, quantity: round2(it.quantity - (returnedByItemId[it.id] ?? 0)) }))
+      .filter((it) => it.quantity > 0)
 
     const byGroup = {}
     ;(data ?? []).forEach((it) => {
@@ -81,8 +97,9 @@ export default function PromotionSpendTab() {
         <p className="muted" style={{ fontSize: '0.8rem', marginTop: '0.75rem', marginBottom: 0 }}>
           Every item given away free by a Buy X Get Y Free promotion (price $0 on the invoice), grouped by
           item and channel. Cost is that item's average cost at the time it was given away — what the
-          promotion actually spent, since no revenue came in for that line. Items with no cost on file
-          (e.g. sold before cost tracking, or a cut item whose parent was never purchased) show "—".
+          promotion actually spent, since no revenue came in for that line. A returned giveaway is netted
+          out, so it isn't counted here either. Items with no cost on file (e.g. sold before cost
+          tracking, or a cut item whose parent was never purchased) show "—".
         </p>
       </div>
 

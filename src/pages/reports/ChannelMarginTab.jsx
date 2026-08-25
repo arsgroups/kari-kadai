@@ -30,11 +30,11 @@ export default function ChannelMarginTab() {
 
   async function load() {
     setLoading(true)
-    const [{ data: invoiceRows }, { data: itemRows }, { data: yieldConfigs }] = await Promise.all([
+    const [{ data: invoiceRows }, { data: rawItemRows }, { data: yieldConfigs }] = await Promise.all([
       supabase.from('sale_invoices').select('date, channel, total').gte('date', from).lte('date', to),
       supabase
         .from('sale_invoice_items')
-        .select('product_id, quantity, amount, unit_cost, products(name), sale_invoices!inner(date, channel)')
+        .select('id, product_id, quantity, amount, unit_cost, products(name), sale_invoices!inner(date, channel)')
         .gte('sale_invoices.date', from)
         .lte('sale_invoices.date', to),
       supabase
@@ -44,6 +44,32 @@ export default function ChannelMarginTab() {
         )
         .eq('is_active', true),
     ])
+
+    // A returned line is "a null sale" -- net its quantity/amount back out
+    // of the original sale_invoice_items row before it feeds Top Items or
+    // Yield Group Margin (the main Channel Revenue table above already
+    // reflects returns, since a return reduces the invoice's own total).
+    const itemIds = (rawItemRows ?? []).map((it) => it.id)
+    let returnedByItemId = {}
+    if (itemIds.length) {
+      const { data: returnRows } = await supabase
+        .from('sale_return_items')
+        .select('sale_invoice_item_id, quantity, amount')
+        .in('sale_invoice_item_id', itemIds)
+      ;(returnRows ?? []).forEach((r) => {
+        if (!returnedByItemId[r.sale_invoice_item_id]) returnedByItemId[r.sale_invoice_item_id] = { quantity: 0, amount: 0 }
+        returnedByItemId[r.sale_invoice_item_id].quantity += r.quantity
+        returnedByItemId[r.sale_invoice_item_id].amount += r.amount
+      })
+    }
+    const itemRows = (rawItemRows ?? [])
+      .map((it) => {
+        const returned = returnedByItemId[it.id]
+        return returned
+          ? { ...it, quantity: round2(it.quantity - returned.quantity), amount: round2(it.amount - returned.amount) }
+          : it
+      })
+      .filter((it) => it.quantity > 0)
 
     // Every sale, historical or current -- full invoice total (matches
     // Sales report / P&L), no cost/margin here.
@@ -191,7 +217,8 @@ export default function ChannelMarginTab() {
         </div>
         <p className="muted" style={{ fontSize: '0.8rem', marginTop: '0.75rem', marginBottom: 0 }}>
           Revenue is each channel's full invoice total (matches the Sales report and P&amp;L), covering
-          every sale in the range — historical entries and current itemized sales alike.
+          every sale in the range — historical entries and current itemized sales alike. Returned amounts
+          are excluded throughout (a return is never counted as a sale).
         </p>
       </div>
 
