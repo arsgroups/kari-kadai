@@ -25,24 +25,24 @@ export default function PnLTab() {
     setLoading(true)
 
     const [{ data: sales }, { data: purchases }, { data: expenseRows }] = await Promise.all([
-      supabase.from('sale_invoices').select('date, subtotal').gte('date', from).lte('date', to),
-      supabase.from('purchase_invoices').select('date, total, subtotal').gte('date', from).lte('date', to),
+      supabase.from('sale_invoices').select('date, total').gte('date', from).lte('date', to),
+      supabase.from('purchase_invoices').select('date, total').gte('date', from).lte('date', to),
       supabase.from('expenses').select('amount').eq('entry_type', 'expense').gte('date', from).lte('date', to),
     ])
 
-    // Both sale_invoices.subtotal and purchase_invoices.subtotal are already GST-exclusive
-    // (GST is added on top at entry time), so they're used directly with no extraction needed.
-    const revenueNet = (sales ?? []).reduce((sum, s) => sum + s.subtotal, 0)
-    const cogsNet = (purchases ?? []).reduce((sum, p) => sum + p.subtotal, 0)
+    // Full invoice totals -- no GST/surcharge deducted, matching the Sales
+    // and Purchases reports exactly.
+    const revenue = (sales ?? []).reduce((sum, s) => sum + s.total, 0)
+    const cogs = (purchases ?? []).reduce((sum, p) => sum + p.total, 0)
 
     const expenseTotal = (expenseRows ?? []).reduce((sum, e) => sum + e.amount, 0)
 
-    const grossPnl = round2(revenueNet - cogsNet)
+    const grossPnl = round2(revenue - cogs)
     const netPnl = round2(grossPnl - expenseTotal)
 
     setResult({
-      revenueNet: round2(revenueNet),
-      cogsNet: round2(cogsNet),
+      revenue: round2(revenue),
+      cogs: round2(cogs),
       grossPnl,
       expenseTotal: round2(expenseTotal),
       netPnl,
@@ -52,8 +52,8 @@ export default function PnLTab() {
 
   const exportRows = result
     ? [
-        { line: 'Revenue (net of GST)', amount: result.revenueNet },
-        { line: 'COGS (net of GST)', amount: -result.cogsNet },
+        { line: 'Sales', amount: result.revenue },
+        { line: 'Purchases', amount: -result.cogs },
         { line: 'Gross P&L', amount: result.grossPnl },
         { line: 'Expenses', amount: -result.expenseTotal },
         { line: 'Net P&L', amount: result.netPnl },
@@ -93,18 +93,18 @@ export default function PnLTab() {
       ) : (
         <div className="card">
           <p className="muted" style={{ fontSize: '0.85rem' }}>
-            All figures are net of GST — GST collected on sales and paid on purchases is excluded, since
-            it isn't your revenue or cost, it's held for IRAS.
+            Sales and Purchases are the full invoice totals — nothing is deducted for GST or the
+            Restaurant surcharge, matching the Sales and Purchases reports exactly.
           </p>
           <table className="data-table" style={{ maxWidth: 480 }}>
             <tbody>
               <tr>
-                <td>Revenue (net of GST)</td>
-                <td>{formatMoney(result.revenueNet)}</td>
+                <td>Sales</td>
+                <td>{formatMoney(result.revenue)}</td>
               </tr>
               <tr>
-                <td>− COGS (purchases, net of GST)</td>
-                <td>{formatMoney(result.cogsNet)}</td>
+                <td>− Purchases</td>
+                <td>{formatMoney(result.cogs)}</td>
               </tr>
               <tr style={{ fontWeight: 700 }}>
                 <td>= Gross P&L</td>

@@ -250,7 +250,9 @@ export default function ChannelMarginTab() {
           </label>
         </div>
         <p className="muted" style={{ fontSize: '0.8rem', marginTop: '0.75rem', marginBottom: 0 }}>
-          Revenue is each channel's invoice subtotal (net, matches P&amp;L). Cost/Margin use each sold
+          Revenue here is each channel's invoice subtotal (excludes the Restaurant surcharge, unlike P&amp;L
+          which now uses full invoice totals) so it lines up with the item-level cost figures below, which
+          are also net. Cost/Margin use each sold
           item's average cost at time of sale, so this table only covers days with itemized sales — days
           with no line items (e.g. Historical Data Entry backfill) are excluded here and netted separately
           below instead, so they don't inflate this table's margin.
