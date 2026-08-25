@@ -25,15 +25,39 @@ export default function PromotionSpendTab() {
   async function load() {
     setLoading(true)
     // A promo "Buy X Get Y Free" line is saved with rate = 0 -- what we
-    // "spent" giving it away is what it cost us (its unit_cost), since no
-    // revenue came in for that line at all.
-    const { data: rawRows } = await supabase
-      .from('sale_invoice_items')
-      .select('id, quantity, unit_cost, products(name), sale_invoices!inner(date, channel)')
-      .eq('rate', 0)
-      .gt('quantity', 0)
-      .gte('sale_invoices.date', from)
-      .lte('sale_invoices.date', to)
+    // "spent" giving it away is what it cost us, since no revenue came in
+    // for that line at all.
+    const [{ data: rawRows }, { data: yieldItems }] = await Promise.all([
+      supabase
+        .from('sale_invoice_items')
+        .select('id, product_id, quantity, unit_cost, products(name), sale_invoices!inner(date, channel)')
+        .eq('rate', 0)
+        .gt('quantity', 0)
+        .gte('sale_invoices.date', from)
+        .lte('sale_invoices.date', to),
+      supabase
+        .from('yield_configuration_items')
+        .select('child_product_id, is_active, yield_configurations!inner(parent_product_id, is_active)')
+        .eq('is_active', true)
+        .eq('yield_configurations.is_active', true),
+    ])
+
+    // If the given-away item is a cut/yield-child, its own unit_cost is
+    // often 0/unreliable (only the parent is ever purchased) -- use the
+    // parent's current average cost instead, same as the Yield Group
+    // Margin logic elsewhere.
+    const parentIdByChild = {}
+    ;(yieldItems ?? []).forEach((y) => {
+      parentIdByChild[y.child_product_id] = y.yield_configurations.parent_product_id
+    })
+    const parentIds = [...new Set(Object.values(parentIdByChild))]
+    let parentCostById = {}
+    if (parentIds.length > 0) {
+      const { data: parents } = await supabase.from('products').select('id, average_cost').in('id', parentIds)
+      ;(parents ?? []).forEach((p) => {
+        parentCostById[p.id] = p.average_cost
+      })
+    }
 
     // A returned freebie is a null giveaway -- net it back out.
     const itemIds = (rawRows ?? []).map((it) => it.id)
@@ -58,8 +82,11 @@ export default function PromotionSpendTab() {
       const key = `${name}__${channel}`
       if (!byGroup[key]) byGroup[key] = { name, channel, quantity: 0, cost: 0, hasCost: false }
       byGroup[key].quantity += it.quantity
-      if (it.unit_cost != null) {
-        byGroup[key].cost += it.quantity * it.unit_cost
+
+      const parentId = parentIdByChild[it.product_id]
+      const unitCost = parentId != null ? parentCostById[parentId] : it.unit_cost
+      if (unitCost != null) {
+        byGroup[key].cost += it.quantity * unitCost
         byGroup[key].hasCost = true
       }
     })
@@ -96,10 +123,11 @@ export default function PromotionSpendTab() {
         </div>
         <p className="muted" style={{ fontSize: '0.8rem', marginTop: '0.75rem', marginBottom: 0 }}>
           Every item given away free by a Buy X Get Y Free promotion (price $0 on the invoice), grouped by
-          item and channel. Cost is that item's average cost at the time it was given away — what the
-          promotion actually spent, since no revenue came in for that line. A returned giveaway is netted
-          out, so it isn't counted here either. Items with no cost on file (e.g. sold before cost
-          tracking, or a cut item whose parent was never purchased) show "—".
+          item and channel. Cost is that item's average cost — what the promotion actually spent, since no
+          revenue came in for that line. For a cut/yield item (e.g. a free Wing), the parent's current
+          average cost (e.g. Whole Chicken) is used instead of the child's own, since only the parent is
+          ever purchased. A returned giveaway is netted out, so it isn't counted here either. Items with no
+          cost on file (parent or item never purchased, or sold before cost tracking) show "—".
         </p>
       </div>
 
