@@ -21,7 +21,6 @@ export default function ChannelMarginTab() {
   const [channelRows, setChannelRows] = useState([])
   const [topItemsByChannel, setTopItemsByChannel] = useState({})
   const [trendData, setTrendData] = useState([])
-  const [nonItemized, setNonItemized] = useState(null)
   const [yieldGroupRows, setYieldGroupRows] = useState([])
 
   useEffect(() => {
@@ -31,35 +30,28 @@ export default function ChannelMarginTab() {
 
   async function load() {
     setLoading(true)
-    const [{ data: invoiceRows }, { data: itemRows }, { data: purchaseRows }, { data: yieldConfigs }] =
-      await Promise.all([
-        supabase.from('sale_invoices').select('date, channel, subtotal').gte('date', from).lte('date', to),
-        supabase
-          .from('sale_invoice_items')
-          .select('product_id, quantity, amount, unit_cost, products(name), sale_invoices!inner(date, channel)')
-          .gte('sale_invoices.date', from)
-          .lte('sale_invoices.date', to),
-        supabase.from('purchase_invoices').select('date, total').gte('date', from).lte('date', to),
-        supabase
-          .from('yield_configurations')
-          .select(
-            'id, parent_product_id, products(name), yield_configuration_items(child_product_id, is_active, products(name))'
-          )
-          .eq('is_active', true),
-      ])
+    const [{ data: invoiceRows }, { data: itemRows }, { data: yieldConfigs }] = await Promise.all([
+      supabase.from('sale_invoices').select('date, channel, total').gte('date', from).lte('date', to),
+      supabase
+        .from('sale_invoice_items')
+        .select('product_id, quantity, amount, unit_cost, products(name), sale_invoices!inner(date, channel)')
+        .gte('sale_invoices.date', from)
+        .lte('sale_invoices.date', to),
+      supabase
+        .from('yield_configurations')
+        .select(
+          'id, parent_product_id, products(name), yield_configuration_items(child_product_id, is_active, products(name))'
+        )
+        .eq('is_active', true),
+    ])
 
-    // Days with no line items at all (e.g. Historical Data Entry backfill)
-    // have no per-item cost data -- keep them out of the itemized channel
-    // breakdown entirely (previously their full revenue counted with ~zero
-    // cost, inflating margin toward 100%) and instead net them separately
-    // below as one combined Sales - Purchases figure for that period.
-    const itemizedDates = new Set((itemRows ?? []).map((it) => it.sale_invoices?.date).filter(Boolean))
-
-    const byChannel = Object.fromEntries(CHANNELS.map((c) => [c, { revenue: 0, cost: 0, hasCost: false }]))
+    // Every sale, historical or current -- full invoice total (matches
+    // Sales report / P&L), no cost/margin here.
+    const revenueByChannel = Object.fromEntries(CHANNELS.map((c) => [c, 0]))
     ;(invoiceRows ?? []).forEach((inv) => {
-      if (!itemizedDates.has(inv.date)) return
-      if (byChannel[inv.channel]) byChannel[inv.channel].revenue += inv.subtotal
+      if (revenueByChannel[inv.channel] != null) revenueByChannel[inv.channel] += inv.total
     })
+    setChannelRows(CHANNELS.map((c) => ({ channel: c, revenue: round2(revenueByChannel[c]) })))
 
     const itemsByChannel = Object.fromEntries(CHANNELS.map((c) => [c, {}]))
     const revenueByProduct = {}
@@ -72,31 +64,10 @@ export default function ChannelMarginTab() {
         revenueByProductChannel[it.product_id][channel] =
           (revenueByProductChannel[it.product_id][channel] ?? 0) + it.amount
       }
-      if (!byChannel[channel]) return
-      if (it.unit_cost != null) {
-        byChannel[channel].cost += it.quantity * it.unit_cost
-        byChannel[channel].hasCost = true
-      }
+      if (!itemsByChannel[channel]) return
       const name = it.products?.name ?? 'Unknown'
       itemsByChannel[channel][name] = (itemsByChannel[channel][name] ?? 0) + it.amount
     })
-
-    setChannelRows(
-      CHANNELS.map((c) => {
-        const r = byChannel[c]
-        const revenue = round2(r.revenue)
-        const cost = round2(r.cost)
-        const margin = round2(revenue - cost)
-        return {
-          channel: c,
-          revenue,
-          cost,
-          margin,
-          marginPct: revenue > 0 ? round2((margin / revenue) * 100) : 0,
-          hasCost: r.hasCost,
-        }
-      })
-    )
 
     const topItems = {}
     CHANNELS.forEach((c) => {
@@ -110,34 +81,9 @@ export default function ChannelMarginTab() {
     const byDay = {}
     ;(invoiceRows ?? []).forEach((inv) => {
       if (!byDay[inv.date]) byDay[inv.date] = { date: inv.date.slice(5) }
-      byDay[inv.date][inv.channel] = round2((byDay[inv.date][inv.channel] ?? 0) + inv.subtotal)
+      byDay[inv.date][inv.channel] = round2((byDay[inv.date][inv.channel] ?? 0) + inv.total)
     })
     setTrendData(Object.keys(byDay).sort().map((d) => byDay[d]))
-
-    // Non-itemized days: netted as Sales - Purchases for that same set of
-    // dates, shown as one combined figure (not split by channel, since
-    // purchases were never tracked per channel).
-    const nonItemizedSalesRows = (invoiceRows ?? []).filter((inv) => !itemizedDates.has(inv.date))
-    const nonItemizedSales = round2(nonItemizedSalesRows.reduce((sum, inv) => sum + inv.subtotal, 0))
-    const nonItemizedDates = new Set(nonItemizedSalesRows.map((inv) => inv.date))
-    ;(purchaseRows ?? []).forEach((p) => {
-      if (!itemizedDates.has(p.date)) nonItemizedDates.add(p.date)
-    })
-    const nonItemizedPurchases = round2(
-      (purchaseRows ?? []).filter((p) => nonItemizedDates.has(p.date)).reduce((sum, p) => sum + p.total, 0)
-    )
-    if (nonItemizedDates.size > 0) {
-      const margin = round2(nonItemizedSales - nonItemizedPurchases)
-      setNonItemized({
-        days: nonItemizedDates.size,
-        sales: nonItemizedSales,
-        purchases: nonItemizedPurchases,
-        margin,
-        marginPct: nonItemizedSales > 0 ? round2((margin / nonItemizedSales) * 100) : 0,
-      })
-    } else {
-      setNonItemized(null)
-    }
 
     // Yield Group Margin: for a cut/yield-processed item, the child (what's
     // actually sold) never has its own purchase cost -- only the parent
@@ -208,13 +154,7 @@ export default function ChannelMarginTab() {
     setLoading(false)
   }
 
-  const exportRows = channelRows.map((r) => ({
-    channel: r.channel,
-    revenue: r.revenue,
-    cost: r.hasCost ? r.cost : '',
-    margin: r.hasCost ? r.margin : '',
-    margin_pct: r.hasCost ? `${r.marginPct}%` : '',
-  }))
+  const exportRows = channelRows.map((r) => ({ channel: r.channel, revenue: r.revenue }))
 
   const yieldExportRows = yieldGroupRows.flatMap((r) => [
     {
@@ -250,25 +190,18 @@ export default function ChannelMarginTab() {
           </label>
         </div>
         <p className="muted" style={{ fontSize: '0.8rem', marginTop: '0.75rem', marginBottom: 0 }}>
-          Revenue here is each channel's invoice subtotal (excludes the Restaurant surcharge, unlike P&amp;L
-          which now uses full invoice totals) so it lines up with the item-level cost figures below, which
-          are also net. Cost/Margin use each sold
-          item's average cost at time of sale, so this table only covers days with itemized sales — days
-          with no line items (e.g. Historical Data Entry backfill) are excluded here and netted separately
-          below instead, so they don't inflate this table's margin.
+          Revenue is each channel's full invoice total (matches the Sales report and P&amp;L), covering
+          every sale in the range — historical entries and current itemized sales alike.
         </p>
       </div>
 
       <div className="toolbar">
         <ExportButtons
-          title={`Channel Sales & Margin: ${from} to ${to}`}
-          filename="channel_sales_margin"
+          title={`Channel Sales: ${from} to ${to}`}
+          filename="channel_sales"
           columns={[
             { key: 'channel', label: 'Channel' },
             { key: 'revenue', label: 'Revenue', money: true },
-            { key: 'cost', label: 'Cost', money: true },
-            { key: 'margin', label: 'Margin', money: true },
-            { key: 'margin_pct', label: 'Margin %' },
           ]}
           rows={exportRows}
         />
@@ -284,9 +217,6 @@ export default function ChannelMarginTab() {
                 <tr>
                   <th>Channel</th>
                   <th>Revenue</th>
-                  <th>Cost</th>
-                  <th>Margin</th>
-                  <th>Margin %</th>
                 </tr>
               </thead>
               <tbody>
@@ -294,56 +224,11 @@ export default function ChannelMarginTab() {
                   <tr key={r.channel}>
                     <td>{r.channel}</td>
                     <td>{formatMoney(r.revenue)}</td>
-                    <td>{r.hasCost ? formatMoney(r.cost) : '—'}</td>
-                    <td>
-                      {r.hasCost ? (
-                        <span className={r.margin >= 0 ? 'tag tag-success' : 'tag tag-danger'}>
-                          {formatMoney(r.margin)}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td>{r.hasCost ? `${r.marginPct}%` : '—'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="muted" style={{ fontSize: '0.75rem', marginTop: '0.5rem', marginBottom: 0 }}>
-              Only days with itemized sales are counted above.
-            </p>
           </div>
-
-          {nonItemized && (
-            <div className="card">
-              <h3>Days Without Item Detail</h3>
-              <p className="muted" style={{ fontSize: '0.8rem', marginTop: '-0.5rem' }}>
-                {nonItemized.days} day(s) in range with no line items (e.g. Historical Data Entry), netted
-                as one combined Sales − Purchases figure — not split by channel, since purchases aren't
-                tracked per channel.
-              </p>
-              <table className="data-table" style={{ maxWidth: 480 }}>
-                <tbody>
-                  <tr>
-                    <td>Sales</td>
-                    <td>{formatMoney(nonItemized.sales)}</td>
-                  </tr>
-                  <tr>
-                    <td>Purchases</td>
-                    <td>{formatMoney(nonItemized.purchases)}</td>
-                  </tr>
-                  <tr style={{ fontWeight: 700 }}>
-                    <td>Margin</td>
-                    <td>
-                      <span className={nonItemized.margin >= 0 ? 'tag tag-success' : 'tag tag-danger'}>
-                        {formatMoney(nonItemized.margin)} ({nonItemized.marginPct}%)
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )}
 
           <div className="card">
             <h3>Sales Trend by Channel</h3>
@@ -375,7 +260,8 @@ export default function ChannelMarginTab() {
               <div className="card" key={c}>
                 <h3>Top Items — {c}</h3>
                 <p className="muted" style={{ fontSize: '0.8rem', marginTop: '-0.5rem' }}>
-                  Where {c.toLowerCase()} revenue concentrates (top 5 by revenue in range).
+                  Where {c.toLowerCase()} revenue concentrates (top 5 by revenue in range, itemized sales
+                  only).
                 </p>
                 <table className="data-table">
                   <thead>
@@ -414,7 +300,7 @@ export default function ChannelMarginTab() {
                 the parent's total purchase cost this period against the combined revenue from all its
                 children sold. The channel rows underneath each group split that same parent cost by each
                 channel's share of the group's revenue — an estimate, not a directly tracked figure, since
-                purchases aren't recorded per channel.
+                purchases aren't recorded per channel. Itemized sales only (same as Top Items above).
               </p>
               <div className="toolbar" style={{ marginTop: 0 }}>
                 <ExportButtons
