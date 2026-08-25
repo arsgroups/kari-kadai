@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts'
 import { supabase } from '../../lib/supabaseClient'
 import { formatMoney, toISODate } from '../../lib/format'
@@ -63,9 +63,15 @@ export default function ChannelMarginTab() {
 
     const itemsByChannel = Object.fromEntries(CHANNELS.map((c) => [c, {}]))
     const revenueByProduct = {}
+    const revenueByProductChannel = {}
     ;(itemRows ?? []).forEach((it) => {
       revenueByProduct[it.product_id] = (revenueByProduct[it.product_id] ?? 0) + it.amount
       const channel = it.sale_invoices?.channel
+      if (channel) {
+        if (!revenueByProductChannel[it.product_id]) revenueByProductChannel[it.product_id] = {}
+        revenueByProductChannel[it.product_id][channel] =
+          (revenueByProductChannel[it.product_id][channel] ?? 0) + it.amount
+      }
       if (!byChannel[channel]) return
       if (it.unit_cost != null) {
         byChannel[channel].cost += it.quantity * it.unit_cost
@@ -169,6 +175,24 @@ export default function ChannelMarginTab() {
         const parentCost = round2(purchasesByParent[g.parentId] ?? 0)
         const childrenRevenue = round2(g.childIds.reduce((sum, id) => sum + (revenueByProduct[id] ?? 0), 0))
         const margin = round2(childrenRevenue - parentCost)
+        // Parent cost isn't tracked per channel (one purchase feeds children
+        // sold across all channels), so it's allocated by each channel's
+        // share of this group's total children revenue -- an estimate, not
+        // a directly tracked figure.
+        const channelBreakdown = CHANNELS.map((c) => {
+          const channelRevenue = round2(
+            g.childIds.reduce((sum, id) => sum + (revenueByProductChannel[id]?.[c] ?? 0), 0)
+          )
+          const allocatedCost = childrenRevenue > 0 ? round2(parentCost * (channelRevenue / childrenRevenue)) : 0
+          const channelMargin = round2(channelRevenue - allocatedCost)
+          return {
+            channel: c,
+            revenue: channelRevenue,
+            allocatedCost,
+            margin: channelMargin,
+            marginPct: channelRevenue > 0 ? round2((channelMargin / channelRevenue) * 100) : 0,
+          }
+        }).filter((cb) => cb.revenue > 0)
         return {
           parentName: g.parentName,
           childNames: g.childNames.join(', '),
@@ -176,6 +200,7 @@ export default function ChannelMarginTab() {
           childrenRevenue,
           margin,
           marginPct: childrenRevenue > 0 ? round2((margin / childrenRevenue) * 100) : 0,
+          channelBreakdown,
         }
       })
     )
@@ -191,14 +216,24 @@ export default function ChannelMarginTab() {
     margin_pct: r.hasCost ? `${r.marginPct}%` : '',
   }))
 
-  const yieldExportRows = yieldGroupRows.map((r) => ({
-    parent: r.parentName,
-    children: r.childNames,
-    parent_cost: r.parentCost,
-    children_revenue: r.childrenRevenue,
-    margin: r.margin,
-    margin_pct: `${r.marginPct}%`,
-  }))
+  const yieldExportRows = yieldGroupRows.flatMap((r) => [
+    {
+      parent: r.parentName,
+      children: r.childNames,
+      cost: r.parentCost,
+      revenue: r.childrenRevenue,
+      margin: r.margin,
+      margin_pct: `${r.marginPct}%`,
+    },
+    ...r.channelBreakdown.map((cb) => ({
+      parent: `  — ${cb.channel}`,
+      children: '',
+      cost: cb.allocatedCost,
+      revenue: cb.revenue,
+      margin: cb.margin,
+      margin_pct: `${cb.marginPct}%`,
+    })),
+  ])
 
   return (
     <div>
@@ -375,7 +410,9 @@ export default function ChannelMarginTab() {
                 children (e.g. breast, thigh, wing) are what's actually sold, each at its own price. There's
                 no stored yield ratio to split cost precisely per child, so this compares the whole group:
                 the parent's total purchase cost this period against the combined revenue from all its
-                children sold.
+                children sold. The channel rows underneath each group split that same parent cost by each
+                channel's share of the group's revenue — an estimate, not a directly tracked figure, since
+                purchases aren't recorded per channel.
               </p>
               <div className="toolbar" style={{ marginTop: 0 }}>
                 <ExportButtons
@@ -384,8 +421,8 @@ export default function ChannelMarginTab() {
                   columns={[
                     { key: 'parent', label: 'Parent Item' },
                     { key: 'children', label: 'Children' },
-                    { key: 'parent_cost', label: 'Parent Purchase Cost', money: true },
-                    { key: 'children_revenue', label: 'Children Revenue', money: true },
+                    { key: 'cost', label: 'Cost', money: true },
+                    { key: 'revenue', label: 'Revenue', money: true },
                     { key: 'margin', label: 'Margin', money: true },
                     { key: 'margin_pct', label: 'Margin %' },
                   ]}
@@ -395,28 +432,46 @@ export default function ChannelMarginTab() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Parent Item</th>
+                    <th>Parent Item / Channel</th>
                     <th>Children</th>
-                    <th>Parent Purchase Cost</th>
-                    <th>Children Revenue</th>
+                    <th>Cost</th>
+                    <th>Revenue</th>
                     <th>Margin</th>
                     <th>Margin %</th>
                   </tr>
                 </thead>
                 <tbody>
                   {yieldGroupRows.map((r) => (
-                    <tr key={r.parentName}>
-                      <td>{r.parentName}</td>
-                      <td>{r.childNames}</td>
-                      <td>{formatMoney(r.parentCost)}</td>
-                      <td>{formatMoney(r.childrenRevenue)}</td>
-                      <td>
-                        <span className={r.margin >= 0 ? 'tag tag-success' : 'tag tag-danger'}>
-                          {formatMoney(r.margin)}
-                        </span>
-                      </td>
-                      <td>{r.marginPct}%</td>
-                    </tr>
+                    <Fragment key={r.parentName}>
+                      <tr style={{ fontWeight: 700, background: 'var(--bg)' }}>
+                        <td>{r.parentName}</td>
+                        <td>{r.childNames}</td>
+                        <td>{formatMoney(r.parentCost)}</td>
+                        <td>{formatMoney(r.childrenRevenue)}</td>
+                        <td>
+                          <span className={r.margin >= 0 ? 'tag tag-success' : 'tag tag-danger'}>
+                            {formatMoney(r.margin)}
+                          </span>
+                        </td>
+                        <td>{r.marginPct}%</td>
+                      </tr>
+                      {r.channelBreakdown.map((cb) => (
+                        <tr key={`${r.parentName}-${cb.channel}`}>
+                          <td style={{ paddingLeft: '1.75rem' }} className="muted">
+                            {cb.channel}
+                          </td>
+                          <td></td>
+                          <td className="muted">{formatMoney(cb.allocatedCost)}</td>
+                          <td className="muted">{formatMoney(cb.revenue)}</td>
+                          <td className="muted">
+                            <span className={cb.margin >= 0 ? 'tag tag-success' : 'tag tag-danger'}>
+                              {formatMoney(cb.margin)}
+                            </span>
+                          </td>
+                          <td className="muted">{cb.marginPct}%</td>
+                        </tr>
+                      ))}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
