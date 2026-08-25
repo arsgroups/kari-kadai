@@ -21,6 +21,38 @@ function addDays(dateStr, n) {
   return toISODate(d)
 }
 
+// Accepts ISO (2024-01-15) and day/month/year (15/01/2024 or 15-01-2024)
+// directly; falls back to the JS Date parser for anything else (e.g. Excel
+// re-formatting a date column as "Jan 15, 2024").
+function parseCsvDate(raw) {
+  const s = String(raw ?? '').trim()
+  if (!s) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/)
+  if (dmy) {
+    const [, d, m, y] = dmy
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+  }
+  const parsed = new Date(s)
+  return Number.isNaN(parsed.getTime()) ? '' : toISODate(parsed)
+}
+
+// Strips currency symbols/commas so "S$1,234.50" or "1234.5" both parse.
+function cleanAmount(raw) {
+  if (raw === '' || raw == null) return ''
+  const cleaned = String(raw).replace(/[^0-9.-]/g, '')
+  return cleaned === '' || cleaned === '-' ? '' : cleaned
+}
+
+function findColumn(row, ...aliases) {
+  const keys = Object.keys(row)
+  for (const alias of aliases) {
+    const match = keys.find((k) => k.trim().toLowerCase().replace(/[^a-z0-9]/g, '') === alias)
+    if (match) return match
+  }
+  return null
+}
+
 export default function HistoricalDataEntryPanel() {
   const [rows, setRows] = useState([emptyRow()])
   const [rangeFrom, setRangeFrom] = useState('')
@@ -28,6 +60,7 @@ export default function HistoricalDataEntryPanel() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [uploadWarning, setUploadWarning] = useState('')
 
   function updateRow(key, patch) {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)))
@@ -58,6 +91,66 @@ export default function HistoricalDataEntryPanel() {
       d = addDays(d, 1)
     }
     setRows(generated)
+  }
+
+  // Loads a CSV (Date, Counter Sales, Home Delivery Sales, Restaurant Sales,
+  // Purchase Total, Expense Total) into the table below for review -- it
+  // doesn't save anything by itself, Save All still applies the rows.
+  async function handleFileUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setError('')
+    setSuccess('')
+    setUploadWarning('')
+
+    const XLSX = await import('xlsx')
+    const text = await file.text()
+    const workbook = XLSX.read(text, { type: 'string' })
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const parsedRows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false })
+
+    if (parsedRows.length === 0) {
+      setError('No rows found in that file.')
+      e.target.value = ''
+      return
+    }
+
+    let skipped = 0
+    const newRows = []
+    parsedRows.forEach((raw) => {
+      const dateCol = findColumn(raw, 'date')
+      const date = parseCsvDate(dateCol ? raw[dateCol] : '')
+      if (!date) {
+        skipped++
+        return
+      }
+      const counterCol = findColumn(raw, 'countersales', 'counter')
+      const hdCol = findColumn(raw, 'homedeliverysales', 'homedelivery')
+      const restaurantCol = findColumn(raw, 'restaurantsales', 'restaurant')
+      const purchaseCol = findColumn(raw, 'purchasetotal', 'purchases', 'purchase')
+      const expenseCol = findColumn(raw, 'expensetotal', 'expenses', 'expense')
+      newRows.push({
+        key: crypto.randomUUID(),
+        date,
+        counterSales: cleanAmount(counterCol ? raw[counterCol] : ''),
+        homeDeliverySales: cleanAmount(hdCol ? raw[hdCol] : ''),
+        restaurantSales: cleanAmount(restaurantCol ? raw[restaurantCol] : ''),
+        purchases: cleanAmount(purchaseCol ? raw[purchaseCol] : ''),
+        expenses: cleanAmount(expenseCol ? raw[expenseCol] : ''),
+      })
+    })
+
+    if (newRows.length === 0) {
+      setError('Could not find any valid dated rows in that file — check the Date column.')
+      e.target.value = ''
+      return
+    }
+
+    setRows(newRows)
+    setUploadWarning(
+      skipped > 0 ? `Loaded ${newRows.length} row(s) for review — ${skipped} row(s) skipped (no valid date).` : `Loaded ${newRows.length} row(s) for review below. Check the numbers, then click Save All.`
+    )
+    e.target.value = ''
   }
 
   async function getOrCreateHistoricalSupplierId() {
@@ -198,6 +291,17 @@ export default function HistoricalDataEntryPanel() {
         in that channel's box and leave the others blank. Purchases are recorded under an auto-created
         supplier named "{HISTORICAL_SUPPLIER_NAME}".
       </p>
+
+      <div className="card" style={{ marginBottom: '1rem' }}>
+        <strong>Upload CSV</strong>
+        <p className="muted" style={{ fontSize: '0.8rem', margin: '0.3rem 0 0.6rem' }}>
+          Columns: <code>Date, Counter Sales, Home Delivery Sales, Restaurant Sales, Purchase Total, Expense
+          Total</code> (column order doesn't matter, blank cells are fine). This loads the rows into the
+          table below for you to check — nothing is saved until you click Save All.
+        </p>
+        <input type="file" accept=".csv,text/csv" onChange={handleFileUpload} />
+        {uploadWarning && <p style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>{uploadWarning}</p>}
+      </div>
 
       <div className="form-grid" style={{ marginBottom: '1rem', maxWidth: 500 }}>
         <label>
