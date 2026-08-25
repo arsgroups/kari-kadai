@@ -118,22 +118,48 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
       doc.text(`Due: ${formatDate(invoice.due_date)}`, 150, metaY + 18)
     }
 
-    autoTable(doc, {
-      startY: metaY + 23 + addressExtra,
-      head: [['Item', 'Qty', 'Unit', 'Price', ...(showDiscount ? ['Discount'] : []), 'Total']],
-      body: items.map((it) => [
-        it.display_name || it.products?.name || '',
-        String(it.quantity),
-        it.unit ?? '',
-        formatMoney(it.rate),
-        ...(showDiscount ? [formatMoney(it.discount)] : []),
-        formatMoney(it.amount),
-      ]),
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [122, 31, 31] },
+    // Exactly 14 items per page, not however many happen to fit -- once a
+    // page's items are done, the next page starts fresh with a "continued"
+    // heading and its own S.No continuing from where the last page left off.
+    const ITEMS_PER_PAGE = 14
+    const itemPages = []
+    for (let i = 0; i < items.length; i += ITEMS_PER_PAGE) {
+      itemPages.push(items.slice(i, i + ITEMS_PER_PAGE))
+    }
+    if (itemPages.length === 0) itemPages.push([])
+
+    let serial = 0
+    itemPages.forEach((pageItems, pageIndex) => {
+      let tableStartY = metaY + 23 + addressExtra
+      if (pageIndex > 0) {
+        doc.addPage()
+        doc.setFontSize(11)
+        doc.text(`Invoice No: ${invoice.invoice_number} (continued) — Page ${pageIndex + 1}`, 14, 20)
+        tableStartY = 28
+      }
+      autoTable(doc, {
+        startY: tableStartY,
+        head: [['S.No', 'Item', 'Qty', 'Unit', 'Price', ...(showDiscount ? ['Discount'] : []), 'Total']],
+        body: pageItems.map((it, i) => [
+          String(serial + i + 1),
+          it.display_name || it.products?.name || '',
+          String(it.quantity),
+          it.unit ?? '',
+          formatMoney(it.rate),
+          ...(showDiscount ? [formatMoney(it.discount)] : []),
+          formatMoney(it.amount),
+        ]),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [122, 31, 31] },
+      })
+      serial += pageItems.length
     })
 
     let y = doc.lastAutoTable.finalY + 10
+    if (y > 270) {
+      doc.addPage()
+      y = 20
+    }
     doc.setFontSize(showSurcharge ? 10 : 12)
     doc.text(`Total: ${formatMoney(invoice.subtotal)}`, 150, y)
     y += showSurcharge ? 5 : 7
@@ -535,6 +561,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         <table className="data-table invoice-items">
           <thead>
             <tr>
+              <th>S.No</th>
               <th>Item</th>
               <th>Qty</th>
               <th>Unit</th>
@@ -544,16 +571,20 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
             </tr>
           </thead>
           <tbody>
-            {items.map((it) => (
-              <tr key={it.id}>
-                <td>{it.display_name || it.products?.name || '—'}</td>
-                <td>{it.quantity}</td>
-                <td>{it.unit}</td>
-                <td>{formatMoney(it.rate)}</td>
-                {hasDiscount && <td>{formatMoney(it.discount)}</td>}
-                <td>{formatMoney(it.amount)}</td>
-              </tr>
-            ))}
+            {items.map((it, i) => {
+              const isPageBreak = (i + 1) % 14 === 0 && i + 1 < items.length
+              return (
+                <tr key={it.id} style={isPageBreak ? { breakAfter: 'page' } : undefined}>
+                  <td>{i + 1}</td>
+                  <td>{it.display_name || it.products?.name || '—'}</td>
+                  <td>{it.quantity}</td>
+                  <td>{it.unit}</td>
+                  <td>{formatMoney(it.rate)}</td>
+                  {hasDiscount && <td>{formatMoney(it.discount)}</td>}
+                  <td>{formatMoney(it.amount)}</td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
 
