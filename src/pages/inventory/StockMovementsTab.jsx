@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, toISODate } from '../../lib/format'
+import SearchableSelect from '../../components/SearchableSelect'
 
 const MANUAL_TYPES = [
   { value: 'opening', label: 'Opening Stock (stock in)' },
@@ -113,18 +114,12 @@ export default function StockMovementsTab() {
           </label>
           <label>
             Product
-            <select
+            <SearchableSelect
               value={form.product_id}
-              onChange={(e) => setForm({ ...form, product_id: e.target.value })}
-              required
-            >
-              <option value="">Select…</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              onChange={(id) => setForm({ ...form, product_id: id })}
+              placeholder="Select…"
+              options={products.map((p) => ({ value: p.id, label: p.name }))}
+            />
           </label>
           <label>
             Type
@@ -164,14 +159,12 @@ export default function StockMovementsTab() {
       <div className="card">
         <div className="toolbar">
           <h3 style={{ margin: 0 }}>Movement History</h3>
-          <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)}>
-            <option value="">All products</option>
-            {productNames.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={filterProduct}
+            onChange={setFilterProduct}
+            placeholder="All products"
+            options={[{ value: '', label: 'All products' }, ...productNames.map((n) => ({ value: n, label: n }))]}
+          />
         </div>
         {loading ? (
           <p className="muted">Loading…</p>
