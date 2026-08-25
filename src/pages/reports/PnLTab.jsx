@@ -27,7 +27,12 @@ export default function PnLTab() {
     const [{ data: sales }, { data: purchases }, { data: expenseRows }] = await Promise.all([
       supabase.from('sale_invoices').select('date, total').gte('date', from).lte('date', to),
       supabase.from('purchase_invoices').select('date, total').gte('date', from).lte('date', to),
-      supabase.from('expenses').select('amount').eq('entry_type', 'expense').gte('date', from).lte('date', to),
+      supabase
+        .from('expenses')
+        .select('amount, scope, expense_categories(name)')
+        .eq('entry_type', 'expense')
+        .gte('date', from)
+        .lte('date', to),
     ])
 
     // Full invoice totals -- no GST/surcharge deducted, matching the Sales
@@ -36,6 +41,21 @@ export default function PnLTab() {
     const cogs = (purchases ?? []).reduce((sum, p) => sum + p.total, 0)
 
     const expenseTotal = (expenseRows ?? []).reduce((sum, e) => sum + e.amount, 0)
+    const dailyExpenseTotal = (expenseRows ?? [])
+      .filter((e) => e.scope === 'daily')
+      .reduce((sum, e) => sum + e.amount, 0)
+    const monthlyExpenseTotal = (expenseRows ?? [])
+      .filter((e) => e.scope === 'monthly')
+      .reduce((sum, e) => sum + e.amount, 0)
+
+    const byCategory = {}
+    ;(expenseRows ?? []).forEach((e) => {
+      const name = e.expense_categories?.name ?? 'Uncategorized'
+      byCategory[name] = (byCategory[name] ?? 0) + e.amount
+    })
+    const expenseByCategory = Object.entries(byCategory)
+      .map(([name, amount]) => ({ name, amount: round2(amount) }))
+      .sort((a, b) => b.amount - a.amount)
 
     const grossPnl = round2(revenue - cogs)
     const netPnl = round2(grossPnl - expenseTotal)
@@ -45,6 +65,9 @@ export default function PnLTab() {
       cogs: round2(cogs),
       grossPnl,
       expenseTotal: round2(expenseTotal),
+      dailyExpenseTotal: round2(dailyExpenseTotal),
+      monthlyExpenseTotal: round2(monthlyExpenseTotal),
+      expenseByCategory,
       netPnl,
     })
     setLoading(false)
@@ -55,7 +78,10 @@ export default function PnLTab() {
         { line: 'Sales', amount: result.revenue },
         { line: 'Purchases', amount: -result.cogs },
         { line: 'Gross P&L', amount: result.grossPnl },
-        { line: 'Expenses', amount: -result.expenseTotal },
+        { line: 'Daily Expenses', amount: -result.dailyExpenseTotal },
+        { line: 'Monthly Expenses', amount: -result.monthlyExpenseTotal },
+        ...result.expenseByCategory.map((c) => ({ line: `  — ${c.name}`, amount: -c.amount })),
+        { line: 'Total Expenses', amount: -result.expenseTotal },
         { line: 'Net P&L', amount: result.netPnl },
       ]
     : []
@@ -114,7 +140,15 @@ export default function PnLTab() {
                 <td colSpan={2}>&nbsp;</td>
               </tr>
               <tr>
-                <td>− Expenses</td>
+                <td>Daily Expenses</td>
+                <td>{formatMoney(result.dailyExpenseTotal)}</td>
+              </tr>
+              <tr>
+                <td>Monthly Expenses</td>
+                <td>{formatMoney(result.monthlyExpenseTotal)}</td>
+              </tr>
+              <tr style={{ fontWeight: 700 }}>
+                <td>− Total Expenses</td>
                 <td>{formatMoney(result.expenseTotal)}</td>
               </tr>
               <tr style={{ fontWeight: 700 }}>
@@ -125,6 +159,29 @@ export default function PnLTab() {
                   </span>
                 </td>
               </tr>
+            </tbody>
+          </table>
+
+          <h3 style={{ marginTop: '1.5rem' }}>Expense Breakdown by Category</h3>
+          <p className="muted" style={{ fontSize: '0.8rem', marginTop: '-0.5rem' }}>
+            Every expense in the range (daily and monthly together), grouped by category — e.g. Fuel,
+            Salary, Room Rent each as one line.
+          </p>
+          <table className="data-table" style={{ maxWidth: 480 }}>
+            <tbody>
+              {result.expenseByCategory.map((c) => (
+                <tr key={c.name}>
+                  <td>{c.name}</td>
+                  <td>{formatMoney(c.amount)}</td>
+                </tr>
+              ))}
+              {result.expenseByCategory.length === 0 && (
+                <tr>
+                  <td colSpan={2} className="muted">
+                    No expenses in this range.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
