@@ -22,8 +22,9 @@ function addDays(dateStr, n) {
 }
 
 // Accepts ISO (2024-01-15) and day/month/year (15/01/2024 or 15-01-2024)
-// directly; falls back to the JS Date parser for anything else (e.g. Excel
-// re-formatting a date column as "Jan 15, 2024").
+// directly, treating the slash/dash form as DD/MM/YYYY (not the US MM/DD
+// convention) since this is entered locally. Falls back to the JS Date
+// parser for anything else (e.g. "Jan 15, 2024").
 function parseCsvDate(raw) {
   const s = String(raw ?? '').trim()
   if (!s) return ''
@@ -35,6 +36,51 @@ function parseCsvDate(raw) {
   }
   const parsed = new Date(s)
   return Number.isNaN(parsed.getTime()) ? '' : toISODate(parsed)
+}
+
+// A small dedicated CSV parser (handles quoted fields/embedded commas) --
+// deliberately not using the xlsx library here, since its CSV reader
+// auto-detects date-like strings and reformats them using the US MM/DD/YYYY
+// convention before we ever see the text, which silently swaps day/month
+// for DD/MM-entered dates.
+function parseCsvText(text) {
+  const rows = []
+  let row = []
+  let field = ''
+  let inQuotes = false
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  for (let i = 0; i < normalized.length; i++) {
+    const c = normalized[i]
+    if (inQuotes) {
+      if (c === '"') {
+        if (normalized[i + 1] === '"') {
+          field += '"'
+          i++
+        } else {
+          inQuotes = false
+        }
+      } else {
+        field += c
+      }
+    } else if (c === '"') {
+      inQuotes = true
+    } else if (c === ',') {
+      row.push(field)
+      field = ''
+    } else if (c === '\n') {
+      row.push(field)
+      rows.push(row)
+      row = []
+      field = ''
+    } else {
+      field += c
+    }
+  }
+  if (field !== '' || row.length) {
+    row.push(field)
+    rows.push(row)
+  }
+  return rows.filter((r) => r.some((cell) => cell.trim() !== ''))
 }
 
 // Strips currency symbols/commas so "S$1,234.50" or "1234.5" both parse.
@@ -103,17 +149,21 @@ export default function HistoricalDataEntryPanel() {
     setSuccess('')
     setUploadWarning('')
 
-    const XLSX = await import('xlsx')
     const text = await file.text()
-    const workbook = XLSX.read(text, { type: 'string' })
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    const parsedRows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false })
-
-    if (parsedRows.length === 0) {
+    const table = parseCsvText(text)
+    if (table.length < 2) {
       setError('No rows found in that file.')
       e.target.value = ''
       return
     }
+    const headers = table[0]
+    const parsedRows = table.slice(1).map((cols) => {
+      const obj = {}
+      headers.forEach((h, i) => {
+        obj[h] = cols[i] ?? ''
+      })
+      return obj
+    })
 
     let skipped = 0
     const newRows = []
