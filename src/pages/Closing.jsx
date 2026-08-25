@@ -17,8 +17,8 @@ export default function Closing() {
   const [creditSales, setCreditSales] = useState(0)
   const [pettyCashSpent, setPettyCashSpent] = useState(0)
   const [cashCreditCollected, setCashCreditCollected] = useState(0)
-  const [openingCash, setOpeningCash] = useState(0)
   const [actualCounted, setActualCounted] = useState('')
+  const [bankDepositAmount, setBankDepositAmount] = useState('')
   const [note, setNote] = useState('')
   const [existingRecordId, setExistingRecordId] = useState(null)
   const [totalOutstanding, setTotalOutstanding] = useState(0)
@@ -33,27 +33,19 @@ export default function Closing() {
     setLoading(true)
     setError('')
 
-    const [salesRes, pettyRes, closingRes, prevClosingRes, outstandingRes, payableRes, creditPaymentsRes] =
-      await Promise.all([
-        supabase.from('sale_invoices').select('total, payment_type').eq('date', date),
-        supabase
-          .from('expenses')
-          .select('amount')
-          .eq('date', date)
-          .eq('entry_type', 'expense')
-          .eq('scope', 'daily'),
-        supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
-        supabase
-          .from('daily_closing')
-          .select('actual_cash_counted')
-          .lt('date', date)
-          .order('date', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase.from('v_customer_outstanding').select('outstanding'),
-        supabase.from('v_supplier_outstanding').select('outstanding'),
-        supabase.from('customer_payments').select('amount, payment_type').eq('date', date),
-      ])
+    const [salesRes, pettyRes, closingRes, outstandingRes, payableRes, creditPaymentsRes] = await Promise.all([
+      supabase.from('sale_invoices').select('total, payment_type').eq('date', date),
+      supabase
+        .from('expenses')
+        .select('amount')
+        .eq('date', date)
+        .eq('entry_type', 'expense')
+        .eq('scope', 'daily'),
+      supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
+      supabase.from('v_customer_outstanding').select('outstanding'),
+      supabase.from('v_supplier_outstanding').select('outstanding'),
+      supabase.from('customer_payments').select('amount, payment_type').eq('date', date),
+    ])
 
     const sales = salesRes.data ?? []
     setCashSales(sales.filter((s) => s.payment_type === 'Cash').reduce((sum, s) => sum + s.total, 0))
@@ -64,15 +56,16 @@ export default function Closing() {
     setCashCreditCollected(
       (creditPaymentsRes.data ?? []).filter((p) => p.payment_type === 'Cash').reduce((sum, p) => sum + p.amount, 0)
     )
-    setOpeningCash(prevClosingRes.data?.actual_cash_counted ?? 0)
 
     if (closingRes.data) {
       setExistingRecordId(closingRes.data.id)
       setActualCounted(closingRes.data.actual_cash_counted ?? '')
+      setBankDepositAmount(closingRes.data.bank_deposit_amount ?? '')
       setNote(closingRes.data.note ?? '')
     } else {
       setExistingRecordId(null)
       setActualCounted('')
+      setBankDepositAmount('')
       setNote('')
     }
 
@@ -82,9 +75,14 @@ export default function Closing() {
     setLoading(false)
   }
 
+  // Each day starts from zero, not carried forward from yesterday's counted
+  // cash -- once counted, cash is expected to be deposited to the bank
+  // (tracked below), not held over as tomorrow's opening balance.
   const cashSalesNum = cashSales
-  const expectedCash = openingCash + cashSalesNum + cashCreditCollected - pettyCashSpent
+  const expectedCash = cashSalesNum + cashCreditCollected - pettyCashSpent
   const variance = actualCounted === '' ? null : Number(actualCounted) - expectedCash
+  const bankDepositVariance =
+    actualCounted === '' || bankDepositAmount === '' ? null : Number(actualCounted) - Number(bankDepositAmount)
 
   async function handleSave(e) {
     e.preventDefault()
@@ -93,6 +91,7 @@ export default function Closing() {
     const payload = {
       date,
       actual_cash_counted: actualCounted === '' ? null : Number(actualCounted),
+      bank_deposit_amount: bankDepositAmount === '' ? null : Number(bankDepositAmount),
       note: note || null,
     }
     const { error } = existingRecordId
@@ -150,10 +149,6 @@ export default function Closing() {
           <table className="data-table" style={{ maxWidth: 480 }}>
             <tbody>
               <tr>
-                <td>Opening Cash (yesterday's counted cash)</td>
-                <td>{formatMoney(openingCash)}</td>
-              </tr>
-              <tr>
                 <td>+ Cash Sales Today</td>
                 <td>{formatMoney(cashSalesNum)}</td>
               </tr>
@@ -194,6 +189,15 @@ export default function Closing() {
               />
             </label>
             <label>
+              Bank Deposit Amount
+              <input
+                type="number"
+                step="0.01"
+                value={bankDepositAmount}
+                onChange={(e) => setBankDepositAmount(e.target.value)}
+              />
+            </label>
+            <label>
               Note
               <input value={note} onChange={(e) => setNote(e.target.value)} />
             </label>
@@ -204,10 +208,19 @@ export default function Closing() {
 
           {variance !== null && (
             <p style={{ marginTop: '1rem' }}>
-              Variance:{' '}
+              Variance (Actual vs Expected):{' '}
               <span className={variance === 0 ? 'tag tag-success' : 'tag tag-danger'}>
                 {variance > 0 ? '+' : ''}
                 {formatMoney(variance)}
+              </span>
+            </p>
+          )}
+          {bankDepositVariance !== null && (
+            <p style={{ marginTop: '0.5rem' }}>
+              Bank Deposit Variance (Actual vs Deposited):{' '}
+              <span className={bankDepositVariance === 0 ? 'tag tag-success' : 'tag tag-danger'}>
+                {bankDepositVariance > 0 ? '+' : ''}
+                {formatMoney(bankDepositVariance)}
               </span>
             </p>
           )}

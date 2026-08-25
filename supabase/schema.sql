@@ -463,6 +463,7 @@ create table if not exists daily_closing (
   id uuid primary key default gen_random_uuid(),
   date date not null unique default current_date,
   actual_cash_counted numeric,
+  bank_deposit_amount numeric, -- how much of the counted cash was actually deposited to the bank
   note text,
   created_at timestamptz not null default now()
 );

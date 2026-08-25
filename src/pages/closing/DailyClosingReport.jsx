@@ -21,7 +21,6 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       { data: purchases },
       { data: expenseRows },
       { data: closingRow },
-      { data: prevClosing },
     ] = await Promise.all([
       supabase
         .from('sale_invoices')
@@ -38,13 +37,6 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
         .eq('date', date)
         .eq('scope', 'daily'),
       supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
-      supabase
-        .from('daily_closing')
-        .select('actual_cash_counted')
-        .lt('date', date)
-        .order('date', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
     ])
 
     // A payment is "old credit collected" only if it's settling an invoice
@@ -88,12 +80,17 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     const expenseEntries = (expenseRows ?? []).filter((e) => e.entry_type === 'expense')
     const totalExpenses = expenseEntries.reduce((sum, e) => sum + e.amount, 0)
 
-    const openingCash = prevClosing?.actual_cash_counted ?? 0
-    // Cash physically in the till also includes any old credit collected in
-    // cash today, not just today's new Cash-channel sales.
-    const expectedCash = openingCash + cashSales + cashCreditCollected - totalExpenses
+    // Each day starts from zero, not carried forward from yesterday's counted
+    // cash -- cash counted is expected to be deposited to the bank (tracked
+    // below), not held over as tomorrow's opening balance. Cash physically in
+    // the till also includes any old credit collected in cash today, not
+    // just today's new Cash-channel sales.
+    const expectedCash = cashSales + cashCreditCollected - totalExpenses
     const actualCash = closingRow?.actual_cash_counted ?? null
     const variance = actualCash === null ? null : round2(actualCash - expectedCash)
+    const bankDepositAmount = closingRow?.bank_deposit_amount ?? null
+    const bankDepositVariance =
+      actualCash === null || bankDepositAmount === null ? null : round2(actualCash - bankDepositAmount)
 
     setData({
       salesRows,
@@ -108,10 +105,11 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       totalPurchases,
       expenseEntries,
       totalExpenses,
-      openingCash,
       expectedCash,
       actualCash,
       variance,
+      bankDepositAmount,
+      bankDepositVariance,
     })
     setLoading(false)
   }
@@ -213,9 +211,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     })
     y = doc.lastAutoTable.finalY + 6
     doc.setFontSize(10)
-    doc.text(`Opening Cash: ${formatMoney(data.openingCash)}`, 14, y)
-    y += 5
-    doc.text(`+ Cash Sales Today: ${formatMoney(data.cashSales)}`, 14, y)
+    doc.text(`Cash Sales Today: ${formatMoney(data.cashSales)}`, 14, y)
     y += 5
     doc.text(`+ Cash Collected from Old Credit Today: ${formatMoney(data.cashCreditCollected)}`, 14, y)
     y += 5
@@ -228,6 +224,14 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     doc.text(`Actual Cash Counted: ${data.actualCash === null ? 'Not entered' : formatMoney(data.actualCash)}`, 14, y)
     y += 5
     doc.text(`Variance: ${data.variance === null ? '—' : formatMoney(data.variance)}`, 14, y)
+    y += 7
+    doc.text(
+      `Bank Deposit Amount: ${data.bankDepositAmount === null ? 'Not entered' : formatMoney(data.bankDepositAmount)}`,
+      14,
+      y
+    )
+    y += 5
+    doc.text(`Bank Deposit Variance: ${data.bankDepositVariance === null ? '—' : formatMoney(data.bankDepositVariance)}`, 14, y)
 
     doc.save(`daily-report-${date}.pdf`)
   }
@@ -441,11 +445,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
         <table className="data-table" style={{ maxWidth: 480, marginTop: '1rem' }}>
           <tbody>
             <tr>
-              <td>Opening Cash</td>
-              <td>{formatMoney(data.openingCash)}</td>
-            </tr>
-            <tr>
-              <td>+ Cash Sales Today</td>
+              <td>Cash Sales Today</td>
               <td>{formatMoney(data.cashSales)}</td>
             </tr>
             <tr>
@@ -472,6 +472,22 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
                 ) : (
                   <span className={data.variance === 0 ? 'tag tag-success' : 'tag tag-danger'}>
                     {formatMoney(data.variance)}
+                  </span>
+                )}
+              </td>
+            </tr>
+            <tr>
+              <td>Bank Deposit Amount</td>
+              <td>{data.bankDepositAmount === null ? 'Not entered yet' : formatMoney(data.bankDepositAmount)}</td>
+            </tr>
+            <tr style={{ fontWeight: 700 }}>
+              <td>Bank Deposit Variance</td>
+              <td>
+                {data.bankDepositVariance === null ? (
+                  '—'
+                ) : (
+                  <span className={data.bankDepositVariance === 0 ? 'tag tag-success' : 'tag tag-danger'}>
+                    {formatMoney(data.bankDepositVariance)}
                   </span>
                 )}
               </td>
