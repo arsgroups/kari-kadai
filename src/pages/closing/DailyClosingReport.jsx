@@ -121,6 +121,19 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       import('jspdf-autotable'),
     ])
     const doc = new jsPDF()
+    const pageHeight = doc.internal.pageSize.getHeight()
+    // The report has four sections plus running summaries -- taller than one
+    // A4 page most days. Anything that would run past the bottom margin
+    // moves to a fresh page instead of being drawn off it (which is what
+    // was silently truncating the download to one page).
+    let y
+    function ensureSpace(neededHeight) {
+      if (y + neededHeight > pageHeight - 20) {
+        doc.addPage()
+        y = 20
+      }
+    }
+
     doc.setFontSize(16)
     doc.text(COMPANY.name, 14, 18)
     doc.setFontSize(9)
@@ -132,7 +145,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     doc.text(`Operator: ${operatorEmail}`, 14, 43)
     doc.text(`Printed on: ${new Date().toLocaleString('en-SG')}`, 14, 48)
 
-    let y = 55
+    y = 55
     doc.setFontSize(11)
     doc.text('1. Today\'s Sales by Customer', 14, y)
     autoTable(doc, {
@@ -151,6 +164,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     })
 
     y = doc.lastAutoTable.finalY + 8
+    ensureSpace(20)
     doc.setFontSize(11)
     doc.text('2. Old Credit Collected Today', 14, y)
     autoTable(doc, {
@@ -164,6 +178,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     })
 
     y = doc.lastAutoTable.finalY + 8
+    ensureSpace(40)
     doc.setFontSize(10)
     doc.text(`Total Credit Collected Today: ${formatMoney(data.creditCollectedToday)}`, 14, y)
     y += 6
@@ -177,6 +192,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     doc.text(`Total Sales: ${formatMoney(data.totalSales)}`, 14, y)
 
     y += 9
+    ensureSpace(20)
     doc.setFontSize(11)
     doc.text('3. Today\'s Purchases', 14, y)
     autoTable(doc, {
@@ -194,10 +210,12 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       headStyles: { fillColor: [122, 31, 31] },
     })
     y = doc.lastAutoTable.finalY + 6
+    ensureSpace(10)
     doc.setFontSize(10.5)
     doc.text(`Total Purchases: ${formatMoney(data.totalPurchases)}`, 14, y)
 
     y += 9
+    ensureSpace(20)
     doc.setFontSize(11)
     doc.text('4. Cash in Hand', 14, y)
     autoTable(doc, {
@@ -210,6 +228,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       headStyles: { fillColor: [122, 31, 31] },
     })
     y = doc.lastAutoTable.finalY + 6
+    ensureSpace(55)
     doc.setFontSize(10)
     doc.text(`Cash Sales Today: ${formatMoney(data.cashSales)}`, 14, y)
     y += 5
