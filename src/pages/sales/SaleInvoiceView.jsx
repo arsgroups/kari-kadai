@@ -9,6 +9,14 @@ import { useAuth } from '../../contexts/AuthContext'
 // Fetches an image (bundled asset or a configured Storage URL) and resolves
 // its PDF-ready data URL along with format + natural size, so a custom
 // upload of any aspect ratio still renders at the correct proportions.
+// Mirrors unit_conversion_factor() in schema.sql (Kg<->Gram).
+function unitConversionFactor(fromUnit, toUnit) {
+  if (fromUnit === toUnit) return 1
+  if (fromUnit === 'Kg' && toUnit === 'Gram') return 1000
+  if (fromUnit === 'Gram' && toUnit === 'Kg') return 0.001
+  return 1
+}
+
 function loadImageInfo(url) {
   return fetch(url)
     .then((res) => res.blob())
@@ -47,7 +55,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   const [editLines, setEditLines] = useState([])
   const [editProducts, setEditProducts] = useState([]) // channel-visible products, for the Add Line picker
   const [newLineProduct, setNewLineProduct] = useState('')
-  const [productFactors, setProductFactors] = useState({}) // product_id -> sales_to_inventory_factor
+  const [stockMeta, setStockMeta] = useState({}) // product_id -> { unit, factor, parentId, parentUnit }
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState('')
 
@@ -217,13 +225,20 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
       }))
     )
     setNewLineProduct('')
-    const [{ data: productData }, { data: channelData }] = await Promise.all([
+    const [{ data: productData }, { data: channelData }, { data: yieldItems }] = await Promise.all([
       supabase
         .from('products')
-        .select('id, name, sales_unit, default_selling_price, restaurant_price, counter_price, sales_to_inventory_factor')
+        .select(
+          'id, name, sales_unit, unit, default_selling_price, restaurant_price, counter_price, sales_to_inventory_factor'
+        )
         .eq('is_active', true)
         .order('name'),
       supabase.from('product_channel_config').select('product_id, channel, display_name, is_visible'),
+      supabase
+        .from('yield_configuration_items')
+        .select('child_product_id, is_active, yield_configurations!inner(parent_product_id, is_active)')
+        .eq('is_active', true)
+        .eq('yield_configurations.is_active', true),
     ])
     const channelMap = {}
     ;(channelData ?? []).forEach((row) => {
@@ -234,12 +249,41 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
       .filter((p) => channelMap[p.id]?.[invoice.channel]?.is_visible !== false)
       .map((p) => ({ ...p, channelName: channelMap[p.id]?.[invoice.channel]?.display_name || p.name }))
     setEditProducts(products)
-    const factorMap = {}
-    ;(productData ?? []).forEach((p) => {
-      factorMap[p.id] = p.sales_to_inventory_factor
+
+    // Children never hold their own stock -- a sale of a yield-child (e.g.
+    // Mutton Boneless) deducts the equivalent weight from its parent (e.g.
+    // Mutton) instead. Mirrors trg_sale_item_stock_movement() in schema.sql
+    // so an edited quantity recomputes the deduction the same way the
+    // original insert did.
+    const parentIdByChild = {}
+    ;(yieldItems ?? []).forEach((y) => {
+      parentIdByChild[y.child_product_id] = y.yield_configurations.parent_product_id
     })
-    setProductFactors(factorMap)
+    const unitById = {}
+    ;(productData ?? []).forEach((p) => {
+      unitById[p.id] = p.unit
+    })
+    const metaMap = {}
+    ;(productData ?? []).forEach((p) => {
+      const parentId = parentIdByChild[p.id] ?? null
+      metaMap[p.id] = {
+        unit: p.unit,
+        factor: p.sales_to_inventory_factor ?? 1,
+        parentId,
+        parentUnit: parentId ? unitById[parentId] : null,
+      }
+    })
+    setStockMeta(metaMap)
     setEditing(true)
+  }
+
+  // Quantity of the target product (the yield-parent, if any, else the
+  // product itself) that a sale of `qty` of `productId` should deduct.
+  function resolveDeductQty(productId, qty) {
+    const meta = stockMeta[productId]
+    if (!meta) return Math.abs(qty)
+    const conv = meta.parentId ? unitConversionFactor(meta.unit, meta.parentUnit) : 1
+    return Math.abs(qty) * meta.factor * conv
   }
 
   function updateEditLine(key, patch) {
@@ -331,10 +375,10 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
       }
 
       if (qtyChanged) {
-        const factor = productFactors[original.product_id] ?? 1
+        const deductQty = resolveDeductQty(original.product_id, newQty)
         const { error: stockErr } = await supabase
           .from('stock_movements')
-          .update({ quantity: -Math.abs(newQty) * factor })
+          .update({ quantity: -deductQty })
           .eq('reference_type', 'sale')
           .eq('reference_id', line.itemId)
         if (stockErr) {
