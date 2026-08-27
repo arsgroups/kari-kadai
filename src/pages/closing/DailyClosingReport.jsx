@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { formatDate, formatMoney } from '../../lib/format'
+import { addDays, formatDate, formatMoney } from '../../lib/format'
 import { COMPANY } from '../../lib/companyInfo'
 import { round2 } from '../../lib/gst'
 
@@ -21,6 +21,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       { data: purchases },
       { data: expenseRows },
       { data: closingRow },
+      { data: prevClosingRow },
     ] = await Promise.all([
       supabase
         .from('sale_invoices')
@@ -37,6 +38,11 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
         .eq('date', date)
         .eq('scope', 'daily'),
       supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
+      supabase
+        .from('daily_closing')
+        .select('actual_cash_counted, bank_deposit_amount')
+        .eq('date', addDays(date, -1))
+        .maybeSingle(),
     ])
 
     // A payment is "old credit collected" only if it's settling an invoice
@@ -80,12 +86,17 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     const expenseEntries = (expenseRows ?? []).filter((e) => e.entry_type === 'expense')
     const totalExpenses = expenseEntries.reduce((sum, e) => sum + e.amount, 0)
 
-    // Each day starts from zero, not carried forward from yesterday's counted
-    // cash -- cash counted is expected to be deposited to the bank (tracked
-    // below), not held over as tomorrow's opening balance. Cash physically in
-    // the till also includes any old credit collected in cash today, not
-    // just today's new Cash-channel sales.
-    const expectedCash = cashSales + cashCreditCollected - totalExpenses
+    // Each day starts from zero plus any cash the previous day counted but
+    // hadn't yet deposited to the bank (its bank deposit variance) -- that
+    // cash is still physically in hand, so it opens today's till rather than
+    // vanishing between days. Cash physically in the till also includes any
+    // old credit collected in cash today, not just today's new Cash-channel
+    // sales.
+    const openingCarry =
+      prevClosingRow?.actual_cash_counted != null && prevClosingRow?.bank_deposit_amount != null
+        ? round2(prevClosingRow.actual_cash_counted - prevClosingRow.bank_deposit_amount)
+        : 0
+    const expectedCash = openingCarry + cashSales + cashCreditCollected - totalExpenses
     const actualCash = closingRow?.actual_cash_counted ?? null
     const variance = actualCash === null ? null : round2(actualCash - expectedCash)
     const bankDepositAmount = closingRow?.bank_deposit_amount ?? null
@@ -105,6 +116,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       totalPurchases,
       expenseEntries,
       totalExpenses,
+      openingCarry,
       expectedCash,
       actualCash,
       variance,
@@ -228,9 +240,11 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       headStyles: { fillColor: [122, 31, 31] },
     })
     y = doc.lastAutoTable.finalY + 6
-    ensureSpace(55)
+    ensureSpace(60)
     doc.setFontSize(10)
-    doc.text(`Cash Sales Today: ${formatMoney(data.cashSales)}`, 14, y)
+    doc.text(`Opening Cash (Previous Day's Bank Deposit Variance): ${formatMoney(data.openingCarry)}`, 14, y)
+    y += 5
+    doc.text(`+ Cash Sales Today: ${formatMoney(data.cashSales)}`, 14, y)
     y += 5
     doc.text(`+ Cash Collected from Old Credit Today: ${formatMoney(data.cashCreditCollected)}`, 14, y)
     y += 5
@@ -464,7 +478,11 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
         <table className="data-table" style={{ maxWidth: 480, marginTop: '1rem' }}>
           <tbody>
             <tr>
-              <td>Cash Sales Today</td>
+              <td>Opening Cash (Previous Day's Bank Deposit Variance)</td>
+              <td>{formatMoney(data.openingCarry)}</td>
+            </tr>
+            <tr>
+              <td>+ Cash Sales Today</td>
               <td>{formatMoney(data.cashSales)}</td>
             </tr>
             <tr>

@@ -20,3 +20,10 @@ export function toISODate(date = new Date()) {
   const yyyy = date.getFullYear()
   return `${yyyy}-${mm}-${dd}`
 }
+
+// Shifts a yyyy-mm-dd string by `days` (negative to go back) and returns the result in the same format.
+export function addDays(isoDate, days) {
+  const d = new Date(isoDate + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return toISODate(d)
+}

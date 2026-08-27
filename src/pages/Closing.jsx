@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { formatMoney, toISODate } from '../lib/format'
+import { addDays, formatMoney, toISODate } from '../lib/format'
+import { round2 } from '../lib/gst'
 import { useAuth } from '../contexts/AuthContext'
 import DailyClosingReport from './closing/DailyClosingReport'
 
@@ -23,6 +24,7 @@ export default function Closing() {
   const [existingRecordId, setExistingRecordId] = useState(null)
   const [totalOutstanding, setTotalOutstanding] = useState(0)
   const [totalPayable, setTotalPayable] = useState(0)
+  const [openingCarry, setOpeningCarry] = useState(0)
 
   useEffect(() => {
     load()
@@ -33,19 +35,25 @@ export default function Closing() {
     setLoading(true)
     setError('')
 
-    const [salesRes, pettyRes, closingRes, outstandingRes, payableRes, creditPaymentsRes] = await Promise.all([
-      supabase.from('sale_invoices').select('total, payment_type').eq('date', date),
-      supabase
-        .from('expenses')
-        .select('amount')
-        .eq('date', date)
-        .eq('entry_type', 'expense')
-        .eq('scope', 'daily'),
-      supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
-      supabase.from('v_customer_outstanding').select('outstanding'),
-      supabase.from('v_supplier_outstanding').select('outstanding'),
-      supabase.from('customer_payments').select('amount, payment_type').eq('date', date),
-    ])
+    const [salesRes, pettyRes, closingRes, outstandingRes, payableRes, creditPaymentsRes, prevClosingRes] =
+      await Promise.all([
+        supabase.from('sale_invoices').select('total, payment_type').eq('date', date),
+        supabase
+          .from('expenses')
+          .select('amount')
+          .eq('date', date)
+          .eq('entry_type', 'expense')
+          .eq('scope', 'daily'),
+        supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
+        supabase.from('v_customer_outstanding').select('outstanding'),
+        supabase.from('v_supplier_outstanding').select('outstanding'),
+        supabase.from('customer_payments').select('amount, payment_type').eq('date', date),
+        supabase
+          .from('daily_closing')
+          .select('actual_cash_counted, bank_deposit_amount')
+          .eq('date', addDays(date, -1))
+          .maybeSingle(),
+      ])
 
     const sales = salesRes.data ?? []
     setCashSales(sales.filter((s) => s.payment_type === 'Cash').reduce((sum, s) => sum + s.total, 0))
@@ -72,14 +80,22 @@ export default function Closing() {
     setTotalOutstanding((outstandingRes.data ?? []).reduce((sum, r) => sum + r.outstanding, 0))
     setTotalPayable((payableRes.data ?? []).reduce((sum, r) => sum + r.outstanding, 0))
 
+    const prev = prevClosingRes.data
+    setOpeningCarry(
+      prev && prev.actual_cash_counted != null && prev.bank_deposit_amount != null
+        ? round2(prev.actual_cash_counted - prev.bank_deposit_amount)
+        : 0
+    )
+
     setLoading(false)
   }
 
-  // Each day starts from zero, not carried forward from yesterday's counted
-  // cash -- once counted, cash is expected to be deposited to the bank
-  // (tracked below), not held over as tomorrow's opening balance.
+  // Each day starts from zero plus any cash the previous day counted but
+  // hadn't yet deposited to the bank (its bank deposit variance) -- that
+  // cash is still physically in hand, so it opens today's till instead of
+  // vanishing between days.
   const cashSalesNum = cashSales
-  const expectedCash = cashSalesNum + cashCreditCollected - pettyCashSpent
+  const expectedCash = openingCarry + cashSalesNum + cashCreditCollected - pettyCashSpent
   const variance = actualCounted === '' ? null : Number(actualCounted) - expectedCash
   const bankDepositVariance =
     actualCounted === '' || bankDepositAmount === '' ? null : Number(actualCounted) - Number(bankDepositAmount)
@@ -148,6 +164,10 @@ export default function Closing() {
           <h3>Cash Reconciliation for {date}</h3>
           <table className="data-table" style={{ maxWidth: 480 }}>
             <tbody>
+              <tr>
+                <td>+ Opening Cash (Previous Day's Bank Deposit Variance)</td>
+                <td>{formatMoney(openingCarry)}</td>
+              </tr>
               <tr>
                 <td>+ Cash Sales Today</td>
                 <td>{formatMoney(cashSalesNum)}</td>
