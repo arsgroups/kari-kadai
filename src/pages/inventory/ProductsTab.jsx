@@ -65,8 +65,6 @@ export default function ProductsTab() {
   const [savingPrices, setSavingPrices] = useState(false)
   const [stockEdits, setStockEdits] = useState({}) // product_id -> new current stock quantity (string)
   const [savingStock, setSavingStock] = useState(false)
-  const [categoryEdits, setCategoryEdits] = useState({}) // product_id -> new category (string)
-  const [savingCategories, setSavingCategories] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -293,35 +291,6 @@ export default function ProductsTab() {
     load()
   }
 
-  function updateCategoryEdit(productId, value) {
-    setCategoryEdits((prev) => ({ ...prev, [productId]: value }))
-  }
-
-  function discardCategoryEdits() {
-    setCategoryEdits({})
-  }
-
-  async function saveCategoryEdits() {
-    setSavingCategories(true)
-    setError('')
-    const results = await Promise.all(
-      Object.entries(categoryEdits).map(([productId, value]) =>
-        supabase
-          .from('products')
-          .update({ category: value || 'Others' })
-          .eq('id', productId)
-      )
-    )
-    setSavingCategories(false)
-    const failed = results.find((r) => r.error)
-    if (failed) {
-      setError(failed.error.message)
-      return
-    }
-    setCategoryEdits({})
-    load()
-  }
-
   async function toggleActive(row) {
     await supabase.from('products').update({ is_active: !row.is_active }).eq('id', row.product_id)
     load()
@@ -413,16 +382,6 @@ export default function ProductsTab() {
               {savingStock ? 'Saving…' : `Save Stock Changes (${Object.keys(stockEdits).length})`}
             </button>
             <button className="btn-secondary" disabled={savingStock} onClick={discardStockEdits}>
-              Discard
-            </button>
-          </>
-        )}
-        {Object.keys(categoryEdits).length > 0 && (
-          <>
-            <button className="btn" disabled={savingCategories} onClick={saveCategoryEdits}>
-              {savingCategories ? 'Saving…' : `Save Category Changes (${Object.keys(categoryEdits).length})`}
-            </button>
-            <button className="btn-secondary" disabled={savingCategories} onClick={discardCategoryEdits}>
               Discard
             </button>
           </>
@@ -684,10 +643,10 @@ export default function ProductsTab() {
 
       <div className="card">
         <p className="muted" style={{ fontSize: '0.8rem', marginTop: 0 }}>
-          Category, Current Stock, and Price are all editable directly in the table — change as many rows as
-          needed, then use the matching Save Changes button. Current Stock is recorded as a single adjustment
-          entry, so purchases and sales continue to move stock normally from whatever you set. (Items cut from
-          another item aren't stock-editable here — their stock always derives from the parent item.)
+          Current Stock is editable directly — type the actual quantity on hand and Save Stock Changes;
+          it's recorded as a single adjustment entry, so purchases and sales continue to move stock
+          normally from whatever you set. (Items cut from another item aren't editable here — their stock
+          always derives from the parent item.)
         </p>
         {loading ? (
           <p className="muted">Loading…</p>
@@ -697,7 +656,6 @@ export default function ProductsTab() {
               <tr>
                 <th>Item Code</th>
                 <th>Name</th>
-                <th>Category</th>
                 <th>Current Stock</th>
                 <th>Price</th>
                 <th>Status</th>
@@ -707,8 +665,6 @@ export default function ProductsTab() {
             <tbody>
               {visibleRows.map((r) => {
                 const low = !r.cutFrom && r.current_stock <= r.low_stock_threshold
-                const currentCategory = r.product_id in categoryEdits ? categoryEdits[r.product_id] : r.category
-                const categorySelectValue = CATEGORY_OPTIONS.includes(currentCategory) ? currentCategory : 'Others'
                 return (
                   <tr key={r.product_id}>
                     <td>{r.item_code}</td>
@@ -728,31 +684,6 @@ export default function ProductsTab() {
                         <div className="muted" style={{ fontSize: '0.75rem' }}>
                           Hidden from: {r.hiddenChannels.join(', ')}
                         </div>
-                      )}
-                    </td>
-                    <td>
-                      <select
-                        style={{ width: 140 }}
-                        value={categorySelectValue}
-                        onChange={(e) => {
-                          const val = e.target.value
-                          updateCategoryEdit(r.product_id, val === 'Others' ? '' : val)
-                        }}
-                      >
-                        {CATEGORY_OPTIONS.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                        <option value="Others">Others</option>
-                      </select>
-                      {categorySelectValue === 'Others' && (
-                        <input
-                          style={{ width: 140, marginTop: '0.3rem' }}
-                          value={currentCategory}
-                          placeholder="Enter category name"
-                          onChange={(e) => updateCategoryEdit(r.product_id, e.target.value)}
-                        />
                       )}
                     </td>
                     <td>
@@ -803,7 +734,7 @@ export default function ProductsTab() {
               })}
               {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted">
+                  <td colSpan={6} className="muted">
                     No items found.
                   </td>
                 </tr>
