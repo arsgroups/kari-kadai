@@ -14,6 +14,7 @@ const CHANNELS = ['Restaurant', 'Home Delivery', 'Counter']
 const CATEGORY_OPTIONS = [
   'Mutton',
   'Mutton Parts',
+  'Mutton Boneless',
   'Chicken',
   'Chicken Parts',
   'Chicken Boneless',
