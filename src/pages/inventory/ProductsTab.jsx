@@ -7,6 +7,21 @@ import { useAuth } from '../../contexts/AuthContext'
 
 const CHANNELS = ['Restaurant', 'Home Delivery', 'Counter']
 
+// Fixed category choices, ordered to match how the meat counter is
+// organized (mirrors the Mutton/Chicken/Beef section order used on printed
+// quotations). "Others" reveals a free-text field for anything outside
+// this list.
+const CATEGORY_OPTIONS = [
+  'Mutton',
+  'Mutton Parts',
+  'Chicken',
+  'Chicken Parts',
+  'Chicken Boneless',
+  'Beef',
+  'Beef Boneless',
+  'Beef Parts',
+]
+
 function defaultChannels() {
   return Object.fromEntries(CHANNELS.map((ch) => [ch, { is_visible: true, display_name: '' }]))
 }
@@ -309,7 +324,10 @@ export default function ProductsTab() {
     setSupplierFilter(false)
   }
 
-  const categories = [...new Set(rows.map((r) => r.category).filter(Boolean))]
+  // Anything already stored that isn't one of the fixed options (blank, or a
+  // legacy free-text category) falls under "Others" so its custom field shows.
+  const categorySelectValue =
+    form.category === '' ? '' : CATEGORY_OPTIONS.includes(form.category) ? form.category : 'Others'
   const searchTerm = searchQuery.trim().toLowerCase()
   const visibleRows = rows.filter((r) => {
     if (lowStockOnly && (r.cutFrom || r.current_stock > r.low_stock_threshold)) return false
@@ -410,18 +428,34 @@ export default function ProductsTab() {
             </label>
             <label>
               Category
-              <input
-                list="category-suggestions"
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-                placeholder="e.g. Mutton, Chicken, Others"
-              />
-              <datalist id="category-suggestions">
-                {[...categories, 'Others'].map((c) => (
-                  <option key={c} value={c} />
+              <select
+                value={categorySelectValue}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setForm({ ...form, category: val === 'Others' ? '' : val })
+                }}
+              >
+                <option value="" disabled>
+                  Select category…
+                </option>
+                {CATEGORY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
                 ))}
-              </datalist>
+                <option value="Others">Others</option>
+              </select>
             </label>
+            {categorySelectValue === 'Others' && (
+              <label>
+                Custom Category
+                <input
+                  value={form.category}
+                  onChange={(e) => setForm({ ...form, category: e.target.value })}
+                  placeholder="Enter category name"
+                />
+              </label>
+            )}
             <label>
               Description
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
