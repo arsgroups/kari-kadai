@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
 import { COMPANY } from '../../lib/companyInfo'
@@ -40,6 +40,40 @@ function validUntil(date) {
   return toISODate(d)
 }
 
+// Mutton (and every Mutton cut/part) leads, then Chicken, then Beef, then
+// whatever other categories exist -- alphabetically within each tier -- so
+// the printed/PDF quotation reads as organized meat-counter sections rather
+// than an arbitrary item list.
+function categoryPriority(category) {
+  const c = (category || '').toLowerCase()
+  if (c.includes('mutton')) return 0
+  if (c.includes('chicken')) return 1
+  if (c.includes('beef')) return 2
+  return 3
+}
+
+// Groups quotation items by their product's category into ordered sections,
+// numbering S.No sequentially across the whole list (not reset per section).
+function buildSections(items) {
+  const groups = {}
+  items.forEach((it) => {
+    const category = it.products?.category || 'Others'
+    if (!groups[category]) groups[category] = []
+    groups[category].push(it)
+  })
+  const sections = Object.entries(groups)
+    .map(([category, sectionItems]) => ({ category, items: sectionItems }))
+    .sort((a, b) => {
+      const diff = categoryPriority(a.category) - categoryPriority(b.category)
+      return diff !== 0 ? diff : a.category.localeCompare(b.category)
+    })
+  let sno = 0
+  sections.forEach((section) => {
+    section.items = section.items.map((it) => ({ ...it, sno: ++sno }))
+  })
+  return sections
+}
+
 export default function QuotationView({ quotationId, onClose, onDeleted }) {
   const { isAdmin } = useAuth()
   const [quotation, setQuotation] = useState(null)
@@ -65,7 +99,11 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
     setLoading(true)
     const [{ data: quo }, { data: itemRows }, { data: brandingRow }] = await Promise.all([
       supabase.from('quotations').select('*').eq('id', quotationId).single(),
-      supabase.from('quotation_items').select('*').eq('quotation_id', quotationId).order('created_at'),
+      supabase
+        .from('quotation_items')
+        .select('*, products(category)')
+        .eq('quotation_id', quotationId)
+        .order('created_at'),
       supabase.from('branding_settings').select('header_image_url').single(),
     ])
     setQuotation(quo)
@@ -75,6 +113,7 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
   }
 
   const headerImageUrl = branding?.header_image_url || invoiceHeaderImg
+  const sections = buildSections(items)
 
   function itemPrice(it) {
     return it.special_price ?? it.listed_price ?? 0
@@ -272,10 +311,20 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
     doc.text(`Date: ${formatDate(quotation.date)}`, 150, metaY + 8)
     doc.text(`Channel: ${quotation.channel}`, 150, metaY + 13)
 
+    const body = []
+    sections.forEach((section) => {
+      body.push([
+        { content: section.category, colSpan: 4, styles: { fontStyle: 'bold', fillColor: [237, 227, 217] } },
+      ])
+      section.items.forEach((it) => {
+        body.push([String(it.sno), it.display_name, unitLabel(it.unit), formatMoney(itemPrice(it))])
+      })
+    })
+
     autoTable(doc, {
       startY: metaY + 23 + addressExtra,
       head: [['S.No', 'Item', 'Unit', 'Price']],
-      body: items.map((it, i) => [String(i + 1), it.display_name, unitLabel(it.unit), formatMoney(itemPrice(it))]),
+      body,
       styles: { fontSize: 9 },
       headStyles: { fillColor: [122, 31, 31] },
     })
@@ -531,13 +580,22 @@ export default function QuotationView({ quotationId, onClose, onDeleted }) {
             </tr>
           </thead>
           <tbody>
-            {items.map((it, i) => (
-              <tr key={it.id}>
-                <td>{i + 1}</td>
-                <td>{it.display_name}</td>
-                <td>{unitLabel(it.unit)}</td>
-                <td>{formatMoney(itemPrice(it))}</td>
-              </tr>
+            {sections.map((section) => (
+              <Fragment key={section.category}>
+                <tr>
+                  <td colSpan={4} style={{ fontWeight: 700, background: 'var(--bg)' }}>
+                    {section.category}
+                  </td>
+                </tr>
+                {section.items.map((it) => (
+                  <tr key={it.id}>
+                    <td>{it.sno}</td>
+                    <td>{it.display_name}</td>
+                    <td>{unitLabel(it.unit)}</td>
+                    <td>{formatMoney(itemPrice(it))}</td>
+                  </tr>
+                ))}
+              </Fragment>
             ))}
             {items.length === 0 && (
               <tr>
