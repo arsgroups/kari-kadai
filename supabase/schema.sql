@@ -853,14 +853,28 @@ create policy "admins_write" on user_roles for all to authenticated
 --   select id, 'admin' from auth.users where email = 'your-login-email'
 --   on conflict (user_id) do update set role = 'admin';
 
--- Admin-only view of user emails, so Settings can list "who's who" to assign
--- roles against (auth.users isn't otherwise reachable from the app's API).
-create or replace view admin_user_directory as
-select u.id as user_id, u.email, u.created_at
-from auth.users u
-where is_admin();
+-- Admin-only lookup of user emails, so Settings can list "who's who" to
+-- assign roles against (auth.users isn't otherwise reachable from the app's
+-- API). A SECURITY DEFINER function rather than a view: a view over
+-- auth.users runs with its owner's privileges regardless of any WHERE
+-- clause, which Supabase's Security Advisor flags outright ("auth_users_exposed")
+-- -- the admin check has to happen inside a function instead.
+create or replace function admin_user_directory()
+returns table (user_id uuid, email text, created_at timestamptz)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not is_admin() then
+    raise exception 'not authorized';
+  end if;
+  return query select u.id, u.email, u.created_at from auth.users u;
+end;
+$$;
 
-grant select on admin_user_directory to authenticated;
+revoke all on function admin_user_directory() from public;
+grant execute on function admin_user_directory() to authenticated;
 
 -- ============================================================================
 -- AUDIT LOG — simple, lightweight: who did what, no diffing/JSON payloads.

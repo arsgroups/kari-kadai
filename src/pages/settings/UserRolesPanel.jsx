@@ -13,7 +13,7 @@ export default function UserRolesPanel() {
     setLoading(true)
     setError('')
     const [{ data: users, error: userErr }, { data: roles }] = await Promise.all([
-      supabase.from('admin_user_directory').select('user_id, email, created_at').order('email'),
+      supabase.rpc('admin_user_directory'),
       supabase.from('user_roles').select('user_id, role'),
     ])
     if (userErr) {
@@ -25,7 +25,11 @@ export default function UserRolesPanel() {
     ;(roles ?? []).forEach((r) => {
       roleByUser[r.user_id] = r.role
     })
-    setRows((users ?? []).map((u) => ({ ...u, role: roleByUser[u.user_id] ?? 'sales' })))
+    setRows(
+      (users ?? [])
+        .map((u) => ({ ...u, role: roleByUser[u.user_id] ?? 'sales' }))
+        .sort((a, b) => (a.email || '').localeCompare(b.email || ''))
+    )
     setLoading(false)
   }
 
