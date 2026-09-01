@@ -39,10 +39,18 @@ function KpiCard({ label, value, compare, invertGood }) {
   )
 }
 
-export default function MonthEndReportTab() {
+// A "month-end" report is normally run once that month has actually
+// closed -- default to the last full month rather than the current
+// (likely still in-progress) one.
+function defaultReportMonth() {
   const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
+  const currentMonth = now.getMonth() + 1 // 1-12
+  return currentMonth === 1 ? { year: now.getFullYear() - 1, month: 12 } : { year: now.getFullYear(), month: currentMonth - 1 }
+}
+
+export default function MonthEndReportTab() {
+  const [year, setYear] = useState(defaultReportMonth().year)
+  const [month, setMonth] = useState(defaultReportMonth().month)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [report, setReport] = useState(null)
