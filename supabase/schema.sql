@@ -869,7 +869,7 @@ begin
   if not is_admin() then
     raise exception 'not authorized';
   end if;
-  return query select u.id, u.email, u.created_at from auth.users u;
+  return query select u.id::uuid, u.email::text, u.created_at::timestamptz from auth.users u;
 end;
 $$;
 
