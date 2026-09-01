@@ -143,16 +143,6 @@ export default function MonthEndReportTab() {
               <li key={i}>{line}</li>
             ))}
           </ul>
-          {r.highlights.attention.length > 0 && (
-            <>
-              <h3>Key Management Attention</h3>
-              <ul>
-                {r.highlights.attention.map((line, i) => (
-                  <li key={i}>{line}</li>
-                ))}
-              </ul>
-            </>
-          )}
 
           {/* ==================== 2. P&L STATEMENT ==================== */}
           <h2>Profit &amp; Loss Statement</h2>
@@ -190,7 +180,7 @@ export default function MonthEndReportTab() {
                 <td>{formatMoney(r.current.profitBeforeFee)}</td>
               </tr>
               <tr>
-                <td>Managing Partner Fee — {r.feeRatePercent}% of Profit Before Fee</td>
+                <td>Managing Partner Fee — {r.feeRatePercent}% of Profit</td>
                 <td>{formatMoney(r.current.partnerFee)}</td>
               </tr>
               <tr style={{ fontWeight: 700 }}>
