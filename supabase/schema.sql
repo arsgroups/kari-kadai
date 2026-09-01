@@ -496,6 +496,20 @@ create table if not exists capital_transactions (
 create index if not exists idx_capital_transactions_date on capital_transactions(date);
 -- RLS enabled via the generic authenticated-full-access loop further below.
 
+-- Itemized breakdown for a transaction -- "one batch of capital along with
+-- the detail". amount on the parent row is always the sum of these,
+-- computed client-side and written on save (same convention as a Sale
+-- Invoice's total being built from its line items).
+create table if not exists capital_transaction_items (
+  id uuid primary key default gen_random_uuid(),
+  capital_transaction_id uuid not null references capital_transactions(id) on delete cascade,
+  description text not null,
+  amount numeric not null check (amount > 0),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_capital_transaction_items_transaction on capital_transaction_items(capital_transaction_id);
+
 -- ============================================================================
 -- 6. DAILY CLOSING
 -- ============================================================================
@@ -830,7 +844,7 @@ begin
       'expense_categories','daily_closing','gst_rate_history',
       'gst_returns','customer_item_prices',
       'yield_configurations','yield_configuration_items','product_channel_config','promotions','promotion_products',
-      'quotations','quotation_items','capital_transactions','partner_fee_rate_history'
+      'quotations','quotation_items','capital_transactions','capital_transaction_items','partner_fee_rate_history'
     ])
   loop
     execute format('alter table %I enable row level security', t);
