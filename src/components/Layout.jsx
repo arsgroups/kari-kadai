@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { to: '/expenses/daily', label: 'Daily Expenses' },
   { to: '/expenses/monthly', label: 'Monthly Expenses', adminOnly: true },
   { to: '/closing', label: 'Daily Closing' },
+  { to: '/capital', label: 'Capital', adminOnly: true },
   { to: '/reports', label: 'Reports', adminOnly: true },
   { to: '/settings', label: 'Settings', adminOnly: true },
   { to: '/audit-log', label: 'Audit Log', adminOnly: true },

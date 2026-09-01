@@ -459,6 +459,7 @@ create table if not exists expense_categories (
   name text not null unique,
   classification text not null check (classification in ('fixed','variable')),
   is_active boolean not null default true,
+  is_fixed_asset boolean not null default false, -- Fixed Asset/Capex (Furniture, Aircon, Software...) -- excluded from Operating Expenses, so from the Managing Partner Fee base too
   created_at timestamptz not null default now()
 );
 
@@ -478,6 +479,23 @@ create table if not exists expenses (
 create index if not exists idx_expenses_date on expenses(date);
 create index if not exists idx_expenses_category on expenses(category_id);
 
+-- Partner contributions/withdrawals -- never mixed with operating income or
+-- expense. Free-text partner name (not a lookup table), same convention as
+-- Quotations' free-text customer fields.
+create table if not exists capital_transactions (
+  id uuid primary key default gen_random_uuid(),
+  date date not null default current_date,
+  partner_name text not null,
+  transaction_type text not null check (transaction_type in ('contribution', 'withdrawal')),
+  amount numeric not null check (amount > 0),
+  description text,
+  reference text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_capital_transactions_date on capital_transactions(date);
+-- RLS enabled via the generic authenticated-full-access loop further below.
+
 -- ============================================================================
 -- 6. DAILY CLOSING
 -- ============================================================================
@@ -496,6 +514,17 @@ create table if not exists daily_closing (
 -- ============================================================================
 
 create table if not exists gst_rate_history (
+  id uuid primary key default gen_random_uuid(),
+  effective_from date not null,
+  rate_percent numeric not null,
+  note text,
+  created_at timestamptz not null default now()
+);
+
+-- Managing Partner Fee % (Month-End Report), configurable and date-effective
+-- exactly like gst_rate_history above -- a rate change only affects months
+-- from its effective_from date onward, past months stay as reported.
+create table if not exists partner_fee_rate_history (
   id uuid primary key default gen_random_uuid(),
   effective_from date not null,
   rate_percent numeric not null,
@@ -801,7 +830,7 @@ begin
       'expense_categories','daily_closing','gst_rate_history',
       'gst_returns','customer_item_prices',
       'yield_configurations','yield_configuration_items','product_channel_config','promotions','promotion_products',
-      'quotations','quotation_items'
+      'quotations','quotation_items','capital_transactions','partner_fee_rate_history'
     ])
   loop
     execute format('alter table %I enable row level security', t);
@@ -1071,6 +1100,20 @@ insert into expense_categories (name, classification) values
   ('Others', 'variable')
 on conflict (name) do nothing;
 
+insert into expense_categories (name, classification, is_fixed_asset) values
+  ('Billing Software', 'fixed', true),
+  ('Inventory Software', 'fixed', true),
+  ('Website Design', 'fixed', true),
+  ('Furniture', 'fixed', true),
+  ('Aircon', 'fixed', true),
+  ('Equipment', 'fixed', true),
+  ('Computers', 'fixed', true)
+on conflict (name) do nothing;
+
 insert into gst_rate_history (effective_from, rate_percent, note) values
   ('2024-01-01', 9, 'Singapore standard GST rate from 1 Jan 2024')
+on conflict do nothing;
+
+insert into partner_fee_rate_history (effective_from, rate_percent, note) values
+  ('2024-01-01', 10, 'Default Managing Partner Fee')
 on conflict do nothing;

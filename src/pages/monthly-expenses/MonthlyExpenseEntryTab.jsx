@@ -20,15 +20,15 @@ export default function MonthlyExpenseEntryTab() {
   const [form, setForm] = useState(emptyForm)
   const [editingId, setEditingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
-  const [newCategory, setNewCategory] = useState({ name: '', classification: 'fixed' })
+  const [newCategory, setNewCategory] = useState({ name: '', classification: 'fixed', is_fixed_asset: false })
 
   async function load() {
     setLoading(true)
     const [{ data: catData }, { data: entryData, error: entryError }] = await Promise.all([
-      supabase.from('expense_categories').select('id, name, classification').eq('is_active', true).order('name'),
+      supabase.from('expense_categories').select('id, name, classification, is_fixed_asset').eq('is_active', true).order('name'),
       supabase
         .from('expenses')
-        .select('id, date, category_id, description, amount, payment_method, remarks, expense_categories(name, classification)')
+        .select('id, date, category_id, description, amount, payment_method, remarks, expense_categories(name, classification, is_fixed_asset)')
         .eq('scope', 'monthly')
         .order('date', { ascending: false })
         .limit(200),
@@ -104,11 +104,13 @@ export default function MonthlyExpenseEntryTab() {
   async function addCategory(e) {
     e.preventDefault()
     if (!newCategory.name.trim()) return
-    const { error } = await supabase
-      .from('expense_categories')
-      .insert({ name: newCategory.name.trim(), classification: newCategory.classification })
+    const { error } = await supabase.from('expense_categories').insert({
+      name: newCategory.name.trim(),
+      classification: newCategory.classification,
+      is_fixed_asset: newCategory.is_fixed_asset,
+    })
     if (!error) {
-      setNewCategory({ name: '', classification: 'fixed' })
+      setNewCategory({ name: '', classification: 'fixed', is_fixed_asset: false })
       load()
     }
   }
@@ -180,6 +182,11 @@ export default function MonthlyExpenseEntryTab() {
           <summary style={{ cursor: 'pointer', color: 'var(--muted)', fontSize: '0.85rem' }}>
             Manage expense categories
           </summary>
+          <p className="muted" style={{ fontSize: '0.8rem' }}>
+            Tick "Is Fixed Asset" for one-off Capital Expenditure categories (Billing Software, Furniture,
+            Aircon...) -- those expenses are excluded from Operating Expenses everywhere (including the
+            Managing Partner Fee calculation in Reports → Month-End Report) and reported separately instead.
+          </p>
           <form className="form-grid" style={{ marginTop: '0.75rem' }} onSubmit={addCategory}>
             <label>
               New Category
@@ -198,6 +205,14 @@ export default function MonthlyExpenseEntryTab() {
                 <option value="fixed">Fixed</option>
                 <option value="variable">Variable</option>
               </select>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <input
+                type="checkbox"
+                checked={newCategory.is_fixed_asset}
+                onChange={(e) => setNewCategory({ ...newCategory, is_fixed_asset: e.target.checked })}
+              />
+              Is Fixed Asset / Capex
             </label>
             <button className="btn-secondary" type="submit">
               Add Category
@@ -228,7 +243,14 @@ export default function MonthlyExpenseEntryTab() {
               {entries.map((e) => (
                 <tr key={e.id}>
                   <td>{e.date?.slice(0, 7)}</td>
-                  <td>{e.expense_categories?.name}</td>
+                  <td>
+                    {e.expense_categories?.name}
+                    {e.expense_categories?.is_fixed_asset && (
+                      <span className="tag tag-success" style={{ marginLeft: '0.4rem' }}>
+                        Fixed Asset
+                      </span>
+                    )}
+                  </td>
                   <td>
                     <span
                       className={e.expense_categories?.classification === 'fixed' ? 'tag tag-muted' : 'tag tag-warning'}

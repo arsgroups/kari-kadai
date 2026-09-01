@@ -29,7 +29,7 @@ export default function PnLTab() {
       supabase.from('purchase_invoices').select('date, total').gte('date', from).lte('date', to),
       supabase
         .from('expenses')
-        .select('amount, scope, expense_categories(name)')
+        .select('amount, scope, expense_categories(name, is_fixed_asset)')
         .eq('entry_type', 'expense')
         .gte('date', from)
         .lte('date', to),
@@ -40,16 +40,19 @@ export default function PnLTab() {
     const revenue = (sales ?? []).reduce((sum, s) => sum + s.total, 0)
     const cogs = (purchases ?? []).reduce((sum, p) => sum + p.total, 0)
 
-    const expenseTotal = (expenseRows ?? []).reduce((sum, e) => sum + e.amount, 0)
-    const dailyExpenseTotal = (expenseRows ?? [])
-      .filter((e) => e.scope === 'daily')
-      .reduce((sum, e) => sum + e.amount, 0)
-    const monthlyExpenseTotal = (expenseRows ?? [])
-      .filter((e) => e.scope === 'monthly')
-      .reduce((sum, e) => sum + e.amount, 0)
+    // Fixed Asset / Capex categories (Furniture, Aircon, Software...) are
+    // never operating expenses -- shown on their own line below instead,
+    // same separation Reports -> Month-End Report uses.
+    const operatingRows = (expenseRows ?? []).filter((e) => !e.expense_categories?.is_fixed_asset)
+    const fixedAssetRows = (expenseRows ?? []).filter((e) => e.expense_categories?.is_fixed_asset)
+
+    const expenseTotal = operatingRows.reduce((sum, e) => sum + e.amount, 0)
+    const dailyExpenseTotal = operatingRows.filter((e) => e.scope === 'daily').reduce((sum, e) => sum + e.amount, 0)
+    const monthlyExpenseTotal = operatingRows.filter((e) => e.scope === 'monthly').reduce((sum, e) => sum + e.amount, 0)
+    const fixedAssetTotal = fixedAssetRows.reduce((sum, e) => sum + e.amount, 0)
 
     const byCategory = {}
-    ;(expenseRows ?? []).forEach((e) => {
+    operatingRows.forEach((e) => {
       const name = e.expense_categories?.name ?? 'Uncategorized'
       byCategory[name] = (byCategory[name] ?? 0) + e.amount
     })
@@ -58,7 +61,7 @@ export default function PnLTab() {
       .sort((a, b) => b.amount - a.amount)
 
     const grossPnl = round2(revenue - cogs)
-    const netPnl = round2(grossPnl - expenseTotal)
+    const netPnl = round2(grossPnl - expenseTotal - fixedAssetTotal)
 
     setResult({
       revenue: round2(revenue),
@@ -67,6 +70,7 @@ export default function PnLTab() {
       expenseTotal: round2(expenseTotal),
       dailyExpenseTotal: round2(dailyExpenseTotal),
       monthlyExpenseTotal: round2(monthlyExpenseTotal),
+      fixedAssetTotal: round2(fixedAssetTotal),
       expenseByCategory,
       netPnl,
     })
@@ -81,7 +85,8 @@ export default function PnLTab() {
         { line: 'Daily Expenses', amount: -result.dailyExpenseTotal },
         { line: 'Monthly Expenses', amount: -result.monthlyExpenseTotal },
         ...result.expenseByCategory.map((c) => ({ line: `  — ${c.name}`, amount: -c.amount })),
-        { line: 'Total Expenses', amount: -result.expenseTotal },
+        { line: 'Total Operating Expenses', amount: -result.expenseTotal },
+        { line: 'Fixed Asset / Capex', amount: -result.fixedAssetTotal },
         { line: 'Net P&L', amount: result.netPnl },
       ]
     : []
@@ -120,7 +125,9 @@ export default function PnLTab() {
         <div className="card">
           <p className="muted" style={{ fontSize: '0.85rem' }}>
             Sales and Purchases are the full invoice totals — nothing is deducted for GST or the
-            Restaurant surcharge, matching the Sales and Purchases reports exactly.
+            Restaurant surcharge, matching the Sales and Purchases reports exactly. Fixed Asset / Capex
+            expenses (categories flagged "Is Fixed Asset" in Monthly Expenses) are shown on their own line,
+            separate from Operating Expenses.
           </p>
           <table className="data-table" style={{ maxWidth: 480 }}>
             <tbody>
@@ -148,8 +155,12 @@ export default function PnLTab() {
                 <td>{formatMoney(result.monthlyExpenseTotal)}</td>
               </tr>
               <tr style={{ fontWeight: 700 }}>
-                <td>− Total Expenses</td>
+                <td>− Total Operating Expenses</td>
                 <td>{formatMoney(result.expenseTotal)}</td>
+              </tr>
+              <tr>
+                <td>− Fixed Asset / Capex</td>
+                <td>{formatMoney(result.fixedAssetTotal)}</td>
               </tr>
               <tr style={{ fontWeight: 700 }}>
                 <td>= Net P&L</td>

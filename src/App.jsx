@@ -21,6 +21,7 @@ const Settings = lazy(() => import('./pages/Settings'))
 const Promotions = lazy(() => import('./pages/Promotions'))
 const AuditLog = lazy(() => import('./pages/AuditLog'))
 const Quotations = lazy(() => import('./pages/Quotations'))
+const Capital = lazy(() => import('./pages/Capital'))
 
 function RouteFallback() {
   return <p className="muted" style={{ padding: '2rem' }}>Loading…</p>
@@ -60,6 +61,14 @@ export default function App() {
                 }
               />
               <Route path="closing" element={<Closing />} />
+              <Route
+                path="capital"
+                element={
+                  <AdminRoute>
+                    <Capital />
+                  </AdminRoute>
+                }
+              />
               <Route
                 path="gst"
                 element={

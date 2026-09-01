@@ -8,6 +8,7 @@ import InventoryValuationTab from './reports/InventoryValuationTab'
 import ItemMarginTab from './reports/ItemMarginTab'
 import ChannelMarginTab from './reports/ChannelMarginTab'
 import PromotionSpendTab from './reports/PromotionSpendTab'
+import MonthEndReportTab from './reports/MonthEndReportTab'
 
 export default function Reports() {
   return (
@@ -16,6 +17,7 @@ export default function Reports() {
       <Tabs
         tabs={[
           { key: 'dashboard', label: 'Dashboard', content: <DashboardTab /> },
+          { key: 'month-end', label: 'Month-End Report', content: <MonthEndReportTab /> },
           { key: 'pnl', label: 'P&L', content: <PnLTab /> },
           { key: 'item-margin', label: 'Item Margin', content: <ItemMarginTab /> },
           { key: 'channel-margin', label: 'Channel Sales & Margin', content: <ChannelMarginTab /> },
