@@ -133,15 +133,12 @@ export default function MonthEndReportTab() {
           {/* ==================== 1. EXECUTIVE DASHBOARD ==================== */}
           <h2>Executive Dashboard</h2>
           <div className="summary-tiles">
-            <KpiCard label="Revenue" value={r.current.hasSalesData ? formatMoney(r.current.revenue) : 'Data unavailable'} compare={r.previous.hasSalesData ? r.current.revenue - r.previous.revenue : null} />
+            <KpiCard label="Sales" value={r.current.hasSalesData ? formatMoney(r.current.revenue) : 'Data unavailable'} compare={r.previous.hasSalesData ? r.current.revenue - r.previous.revenue : null} />
+            <KpiCard label="Purchase" value={r.current.hasPurchaseData ? formatMoney(r.current.cogs) : 'Data unavailable'} compare={r.previous.hasPurchaseData ? r.current.cogs - r.previous.cogs : null} invertGood />
             <KpiCard label="Gross Profit" value={formatMoney(r.current.grossProfit)} compare={r.previousMonthHasData ? r.current.grossProfit - r.previous.grossProfit : null} />
-            <KpiCard label="Gross Margin" value={r.current.grossMarginPct != null ? `${r.current.grossMarginPct.toFixed(1)}%` : 'N/A'} />
-            <KpiCard label="Operating Expenses" value={formatMoney(r.current.totalOperatingExpenses)} compare={r.previousMonthHasData ? r.current.totalOperatingExpenses - r.previous.totalOperatingExpenses : null} invertGood />
-            <KpiCard label={`Managing Partner Fee (${r.feeRatePercent}%)`} value={formatMoney(r.current.partnerFee)} />
-            <KpiCard label="Fixed Assets" value={formatMoney(r.current.fixedAssetExpenses)} />
+            <KpiCard label="Gross Profit Margin" value={r.current.grossMarginPct != null ? `${r.current.grossMarginPct.toFixed(1)}%` : 'N/A'} />
             <KpiCard label="Net Profit" value={formatMoney(r.current.finalNetProfit)} compare={r.previousMonthHasData ? r.current.finalNetProfit - r.previous.finalNetProfit : null} />
             <KpiCard label="Net Profit Margin" value={r.current.netMarginPct != null ? `${r.current.netMarginPct.toFixed(1)}%` : 'N/A'} />
-            <KpiCard label="Closing Stock" value={formatMoney(r.inventory.closingStockValue)} compare={r.inventory.closingStockValue - r.inventory.openingStockValue} />
           </div>
 
           {/* ==================== MANAGEMENT HIGHLIGHTS ==================== */}
@@ -176,6 +173,10 @@ export default function MonthEndReportTab() {
                 <td colSpan={2}>&nbsp;</td>
               </tr>
               <tr>
+                <td>Managing Partner Fee — {r.feeRatePercent}% of Gross Profit</td>
+                <td>{formatMoney(r.current.partnerFee)}</td>
+              </tr>
+              <tr>
                 <td>Daily Expenses</td>
                 <td>{formatMoney(r.current.dailyExpenses)}</td>
               </tr>
@@ -184,15 +185,7 @@ export default function MonthEndReportTab() {
                 <td>{formatMoney(r.current.monthlyExpenses)}</td>
               </tr>
               <tr style={{ fontWeight: 700 }}>
-                <td>= Profit Before Managing Partner Fee</td>
-                <td>{formatMoney(r.current.profitBeforeFee)}</td>
-              </tr>
-              <tr>
-                <td>Managing Partner Fee — {r.feeRatePercent}% of Profit</td>
-                <td>{formatMoney(r.current.partnerFee)}</td>
-              </tr>
-              <tr style={{ fontWeight: 700 }}>
-                <td>= Profit After Managing Partner Fee</td>
+                <td>= Profit After Managing Partner Fee &amp; Operating Expenses</td>
                 <td>{formatMoney(r.current.profitAfterFee)}</td>
               </tr>
               <tr>
@@ -213,9 +206,8 @@ export default function MonthEndReportTab() {
             </tbody>
           </table>
           <p className="muted" style={{ fontSize: '0.8rem' }}>
-            The Managing Partner Fee is calculated on Profit Before Fee — before Fixed Asset expenditure is
-            deducted — and is applied as-is even in a loss month (not floored at zero). Fixed Assets never
-            reduce the fee base; they are deducted only in the final step above.
+            The Managing Partner Fee is {r.feeRatePercent}% of Gross Profit specifically — not Operating
+            Expenses and not Fixed Assets — and is applied as-is even in a loss month (not floored at zero).
           </p>
 
           {/* ==================== 3. CAPITAL ==================== */}
@@ -463,10 +455,9 @@ export default function MonthEndReportTab() {
           <table className="data-table" style={{ maxWidth: 480 }}>
             <tbody>
               <tr><td>Gross Profit</td><td>{formatMoney(r.current.grossProfit)}</td></tr>
+              <tr><td>− Managing Partner Fee ({r.feeRatePercent}% of Gross Profit)</td><td>{formatMoney(r.current.partnerFee)}</td></tr>
               <tr><td>− Operating Expenses (Daily + Monthly)</td><td>{formatMoney(r.current.totalOperatingExpenses)}</td></tr>
-              <tr style={{ fontWeight: 700 }}><td>= Profit Before Managing Partner Fee &amp; Fixed Assets</td><td>{formatMoney(r.current.profitBeforeFee)}</td></tr>
-              <tr><td>Managing Partner Fee ({r.feeRatePercent}% of the line above)</td><td>{formatMoney(r.current.partnerFee)}</td></tr>
-              <tr style={{ fontWeight: 700 }}><td>= Profit After Managing Partner Fee</td><td>{formatMoney(r.current.profitAfterFee)}</td></tr>
+              <tr style={{ fontWeight: 700 }}><td>= Profit After Managing Partner Fee &amp; Operating Expenses</td><td>{formatMoney(r.current.profitAfterFee)}</td></tr>
               <tr><td>− Fixed Asset / Capital Expenditure</td><td>{formatMoney(r.current.fixedAssetExpenses)}</td></tr>
               <tr style={{ fontWeight: 700 }}><td>= Final Net Profit</td><td>{formatMoney(r.current.finalNetProfit)}</td></tr>
             </tbody>

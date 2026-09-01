@@ -1129,5 +1129,5 @@ insert into gst_rate_history (effective_from, rate_percent, note) values
 on conflict do nothing;
 
 insert into partner_fee_rate_history (effective_from, rate_percent, note) values
-  ('2024-01-01', 10, 'Default Managing Partner Fee')
+  ('2024-01-01', 5, 'Default Managing Partner Fee')
 on conflict do nothing;

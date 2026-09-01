@@ -126,12 +126,14 @@ function computePnL({ salesRows, purchasesRows, expenseRows, feeRatePercent }) {
   // 4. Operating Expenses (Fixed Asset/Capex categories excluded entirely --
   // they never reduce the Managing Partner Fee base)
   const expenses = computeExpenseSplit(expenseRows)
-  // 5. Profit Before Managing Partner Fee & Fixed Assets
+  // 5. Profit Before Managing Partner Fee & Fixed Assets (an intermediate
+  // subtotal shown in the P&L, but NOT the fee's own base -- see below)
   const profitBeforeFee = round2(grossProfit - expenses.operatingTotal)
-  // 6. Managing Partner Fee -- applied to the base as-is, including when
-  // negative (confirmed business rule: the fee is not floored at zero on a
-  // loss month).
-  const partnerFee = round2(profitBeforeFee * (feeRatePercent / 100))
+  // 6. Managing Partner Fee -- a percentage of GROSS PROFIT specifically
+  // (not Profit Before Fee, and not Final Net Profit), applied to that base
+  // as-is including when Gross Profit itself is negative (confirmed
+  // business rule: the fee is not floored at zero on a loss month).
+  const partnerFee = round2(grossProfit * (feeRatePercent / 100))
   // 7. Profit After Managing Partner Fee
   const profitAfterFee = round2(profitBeforeFee - partnerFee)
   // 8. Fixed Asset / Capital Expenditure (deducted only now, after the fee)
