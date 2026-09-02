@@ -22,6 +22,7 @@ const Promotions = lazy(() => import('./pages/Promotions'))
 const AuditLog = lazy(() => import('./pages/AuditLog'))
 const Quotations = lazy(() => import('./pages/Quotations'))
 const Capital = lazy(() => import('./pages/Capital'))
+const WebsiteOrders = lazy(() => import('./pages/WebsiteOrders'))
 
 function RouteFallback() {
   return <p className="muted" style={{ padding: '2rem' }}>Loading…</p>
@@ -47,6 +48,7 @@ export default function App() {
               <Route path="sales" element={<Sales />} />
               <Route path="quotations" element={<Quotations />} />
               <Route path="purchases" element={<Purchases />} />
+              <Route path="website-orders" element={<WebsiteOrders />} />
               <Route path="petty-cash" element={<Navigate to="/expenses/daily" replace />} />
               <Route path="expenses" element={<Navigate to="/expenses/daily" replace />} />
               <Route path="customers" element={<Customers />} />

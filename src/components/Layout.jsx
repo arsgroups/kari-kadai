@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { COMPANY } from '../lib/companyInfo'
+import { websiteSupabase } from '../lib/websiteSupabaseClient'
+
+const WEBSITE_ORDERS_POLL_MS = 30000
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', end: true },
@@ -9,6 +12,7 @@ const NAV_ITEMS = [
   { to: '/sales', label: 'Sales' },
   { to: '/quotations', label: 'Quotation Generator' },
   { to: '/purchases', label: 'Purchases' },
+  { to: '/website-orders', label: 'Website Orders' },
   { to: '/promotions', label: 'Promotions', adminOnly: true },
   { to: '/customers', label: 'Customers & Credit' },
   { to: '/suppliers', label: 'Suppliers' },
@@ -24,6 +28,7 @@ const NAV_ITEMS = [
 export default function Layout() {
   const { user, signOut, devAutoLoginActive, isAdmin, role, roleDebug } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [pendingWebsiteOrders, setPendingWebsiteOrders] = useState(0)
   const location = useLocation()
   const visibleNavItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin)
 
@@ -31,6 +36,42 @@ export default function Layout() {
   useEffect(() => {
     setSidebarOpen(false)
   }, [location.pathname])
+
+  // Live count of new ("Order Placed") website orders, shown as a sidebar badge.
+  // Only works once staff have signed in on the Website Orders page itself — that's a
+  // separate login, for a separate Supabase project, from this app's own login above.
+  useEffect(() => {
+    let cancelled = false
+
+    async function refreshCount() {
+      const { data: { session } } = await websiteSupabase.auth.getSession()
+      if (!session) {
+        if (!cancelled) setPendingWebsiteOrders(0)
+        return
+      }
+      const { count } = await websiteSupabase
+        .from('website_orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending')
+      if (!cancelled) setPendingWebsiteOrders(count || 0)
+    }
+
+    function onVisible() {
+      if (document.visibilityState === 'visible') refreshCount()
+    }
+
+    refreshCount()
+    const interval = setInterval(refreshCount, WEBSITE_ORDERS_POLL_MS)
+    document.addEventListener('visibilitychange', onVisible)
+    const { data: authSub } = websiteSupabase.auth.onAuthStateChange(() => refreshCount())
+
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+      authSub.subscription.unsubscribe()
+    }
+  }, [])
 
   return (
     <div className="app-shell">
@@ -69,7 +110,10 @@ export default function Layout() {
               end={item.end}
               className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
             >
-              {item.label}
+              <span>{item.label}</span>
+              {item.to === '/website-orders' && pendingWebsiteOrders > 0 && (
+                <span className="nav-badge">{pendingWebsiteOrders}</span>
+              )}
             </NavLink>
           ))}
         </nav>
