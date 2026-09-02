@@ -4,6 +4,7 @@ import { toISODate } from '../../lib/format'
 import { round2 } from '../../lib/gst'
 import { UNIT_OPTIONS, conversionFactor } from '../../lib/units'
 import { useAuth } from '../../contexts/AuthContext'
+import ExportButtons from '../../components/ExportButtons'
 
 const CHANNELS = ['Restaurant', 'Home Delivery', 'Counter']
 
@@ -76,7 +77,7 @@ export default function ProductsTab() {
         .eq('is_active', true)
         .eq('yield_configurations.is_active', true),
       supabase.from('product_channel_config').select('product_id, channel, is_visible'),
-      supabase.from('products').select('id, default_selling_price'),
+      supabase.from('products').select('id, default_selling_price, average_cost, default_purchase_price'),
     ])
     if (error) setError(error.message)
     else {
@@ -341,6 +342,14 @@ export default function ProductsTab() {
     return true
   })
 
+  const exportRows = visibleRows.map((r) => ({
+    name: r.name,
+    unit: r.unit,
+    qty: r.current_stock,
+    cost_price: r.prices?.average_cost || r.prices?.default_purchase_price || 0,
+    selling_price: r.prices?.default_selling_price ?? '',
+  }))
+
   return (
     <div>
       <div className="toolbar">
@@ -366,6 +375,18 @@ export default function ProductsTab() {
         >
           Advanced Search{channelFilters.length > 0 || supplierFilter ? ' (active)' : ''}
         </button>
+        <ExportButtons
+          title="Inventory"
+          filename="inventory"
+          columns={[
+            { key: 'name', label: 'Item' },
+            { key: 'unit', label: 'Unit' },
+            { key: 'qty', label: 'Qty' },
+            { key: 'cost_price', label: 'Cost Price', money: true },
+            { key: 'selling_price', label: 'Selling Price', money: true },
+          ]}
+          rows={exportRows}
+        />
         {Object.keys(priceEdits).length > 0 && (
           <>
             <button className="btn" disabled={savingPrices} onClick={savePriceEdits}>
