@@ -173,7 +173,10 @@ export default function WebsiteOrders() {
   return (
     <div className="page">
       <div className="toolbar" style={{ justifyContent: 'space-between' }}>
-        <h1>Website Orders</h1>
+        <div>
+          <h1>Website Orders</h1>
+          <p className="muted" style={{ margin: 0 }}>Signed in as {session.user.email}</p>
+        </div>
         <button className="btn-secondary" onClick={() => websiteSupabase.auth.signOut()}>
           Sign out (website orders)
         </button>
