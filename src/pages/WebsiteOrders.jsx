@@ -144,10 +144,20 @@ export default function WebsiteOrders() {
   const [session, setSession] = useState(undefined)
 
   useEffect(() => {
+    if (!websiteSupabase) return
     websiteSupabase.auth.getSession().then(({ data }) => setSession(data.session))
     const { data: sub } = websiteSupabase.auth.onAuthStateChange((_event, session) => setSession(session))
     return () => sub.subscription.unsubscribe()
   }, [])
+
+  if (!websiteSupabase) {
+    return (
+      <div className="page">
+        <h1>Website Orders</h1>
+        <p className="muted">Not configured yet — the website orders project URL/key are missing from this environment.</p>
+      </div>
+    )
+  }
 
   if (session === undefined) return <p className="muted" style={{ padding: '2rem' }}>Loading…</p>
 

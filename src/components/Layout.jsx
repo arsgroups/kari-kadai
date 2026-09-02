@@ -41,6 +41,7 @@ export default function Layout() {
   // Only works once staff have signed in on the Website Orders page itself — that's a
   // separate login, for a separate Supabase project, from this app's own login above.
   useEffect(() => {
+    if (!websiteSupabase) return
     let cancelled = false
 
     async function refreshCount() {
