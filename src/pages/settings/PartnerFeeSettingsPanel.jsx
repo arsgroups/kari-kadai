@@ -50,10 +50,10 @@ export default function PartnerFeeSettingsPanel() {
 
   return (
     <div className="card">
-      <h3>Managing Partner Fee</h3>
+      <h3>Managing Partner Salary</h3>
       <p className="muted" style={{ fontSize: '0.85rem' }}>
-        Default is 5% of Gross Profit. Only add a new row here if the agreed rate changes in future — Reports → Month-End
-        Report automatically uses whichever rate was in effect at the start of each reported month.
+        Default is 6% of Gross Profit. Only add a new row here if the agreed rate changes in future — Reports →
+        Month End Report (GP) automatically uses whichever rate was in effect at the start of each reported month.
       </p>
       <form className="form-grid" onSubmit={handleSubmit}>
         <label>

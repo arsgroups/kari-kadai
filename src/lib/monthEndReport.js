@@ -142,6 +142,13 @@ function computePnL({ salesRows, purchasesRows, expenseRows, feeRatePercent }) {
   const finalNetProfit = round2(profitAfterFee - fixedAssetExpenses)
   const netMarginPct = pctOf(finalNetProfit, revenue)
 
+  // GP report's own headline figure: Gross Profit with only Daily Expenses
+  // and the Managing Partner Salary taken off -- deliberately NOT Monthly
+  // Expenses or Fixed Assets, since this report stops at Gross Profit and
+  // never goes all the way to Final Net Profit.
+  const adjustedGrossMargin = round2(grossProfit - expenses.daily - partnerFee)
+  const adjustedGrossMarginPct = pctOf(adjustedGrossMargin, revenue)
+
   return {
     revenue,
     cogs,
@@ -159,6 +166,8 @@ function computePnL({ salesRows, purchasesRows, expenseRows, feeRatePercent }) {
     fixedAssetExpenses,
     finalNetProfit,
     netMarginPct,
+    adjustedGrossMargin,
+    adjustedGrossMarginPct,
     hasSalesData: salesRows.length > 0,
     hasPurchaseData: purchasesRows.length > 0,
     hasExpenseData: expenseRows.length > 0,
@@ -361,54 +370,83 @@ function computeReconciliation({ current, channelAnalysis, inventory }) {
   }
 }
 
-// Section 19: dynamically generated from the actual computed figures, never
-// hand-authored or hard-coded.
-function computeHighlights({ current, previous, channelAnalysis, costCutting, inventory }) {
+// Performance summary for the GP report -- dynamically generated from the
+// actual computed figures, never hand-authored. Scoped to what this report
+// actually shows (Sales, Purchase, Gross Profit/Margin, Daily Expenses,
+// Managing Partner Salary) -- no inventory/cost-cutting/net-profit lines,
+// since those sections don't exist in this report.
+function computeHighlights({ current, previous }) {
   const lines = []
-  const attention = []
 
-  if (current.hasSalesData && previous.hasSalesData) {
-    const change = pctChange(current.revenue, previous.revenue)
-    if (change != null) {
-      lines.push(`Revenue Performance: Sales ${change >= 0 ? 'increased' : 'decreased'} by ${Math.abs(change).toFixed(1)}% compared with the previous month.`)
-      if (change <= -10) attention.push(`Sales declined ${Math.abs(change).toFixed(1)}% month-on-month -- review channel performance below.`)
-    }
+  const revenueChange = current.hasSalesData && previous.hasSalesData ? pctChange(current.revenue, previous.revenue) : null
+  if (revenueChange != null) {
+    lines.push({
+      text: `Sales ${revenueChange >= 0 ? 'increased' : 'decreased'} by ${Math.abs(revenueChange).toFixed(1)}% (${formatSigned(current.revenue - previous.revenue)}) compared with last month.`,
+      tone: revenueChange >= 0 ? 'good' : 'bad',
+    })
   } else {
-    lines.push('Revenue Performance: Previous month has no comparable data -- month-on-month change not shown.')
+    lines.push({ text: 'No comparable sales data for last month -- growth not shown.', tone: 'neutral' })
   }
 
-  lines.push(`Gross Profit: Gross profit was ${current.grossProfit.toFixed(2)} with a margin of ${current.grossMarginPct != null ? current.grossMarginPct.toFixed(1) + '%' : 'N/A'}.`)
+  lines.push({
+    text: `Gross Profit was ${money(current.grossProfit)}, a margin of ${current.grossMarginPct != null ? current.grossMarginPct.toFixed(1) + '%' : 'N/A'} on Sales.`,
+    tone: current.grossProfit >= 0 ? 'good' : 'bad',
+  })
 
-  if (costCutting.totalSavings > 0) {
-    lines.push(`Expense Management: Total identifiable operating expense savings this month were ${costCutting.totalSavings.toFixed(2)}.`)
-  } else if (costCutting.savings.length === 0 && costCutting.increases.length > 0) {
-    lines.push('Expense Management: No expense category decreased this month; several increased -- see Cost-Cutting Analysis.')
-    attention.push('No operating expense category improved this month -- review the Cost-Cutting Analysis section.')
-  }
-  if (costCutting.increases.length > 0) {
-    const worst = costCutting.increases[0]
-    attention.push(`${worst.name} expense increased by ${Math.abs(worst.savings).toFixed(2)} vs last month.`)
-  }
-
-  const stockChange = pctChange(inventory.closingStockValue, inventory.openingStockValue)
-  if (stockChange != null) {
-    lines.push(`Inventory: Closing stock ${stockChange >= 0 ? 'increased' : 'decreased'} by ${Math.abs(stockChange).toFixed(1)}% during the month.`)
-  }
-  if (inventory.outOfStock.length > 0) {
-    attention.push(`${inventory.outOfStock.length} item(s) are out of stock: ${inventory.outOfStock.map((i) => i.name).join(', ')}.`)
-  }
-  if (inventory.lowStock.length > 0) {
-    attention.push(`${inventory.lowStock.length} item(s) are at or below their low-stock threshold.`)
+  const expenseChange = pctChange(current.dailyExpenses, previous.dailyExpenses)
+  if (expenseChange != null) {
+    lines.push({
+      text: `Daily Expenses ${expenseChange <= 0 ? 'decreased' : 'increased'} by ${Math.abs(expenseChange).toFixed(1)}% (${formatSigned(current.dailyExpenses - previous.dailyExpenses)}) compared with last month.`,
+      tone: expenseChange <= 0 ? 'good' : 'bad',
+    })
+  } else {
+    lines.push({ text: `Daily Expenses were ${money(current.dailyExpenses)} this month -- no comparable figure from last month.`, tone: 'neutral' })
   }
 
-  lines.push(`Profitability: Net profit was ${current.finalNetProfit.toFixed(2)} after Managing Partner Fee and Fixed Asset expenditure.`)
-  if (current.finalNetProfit < 0) attention.push('Final Net Profit is negative this month.')
+  lines.push({
+    text: `Managing Partner Salary was ${money(current.partnerFee)} (${current.feeRatePercent}% of Gross Profit).`,
+    tone: 'neutral',
+  })
 
-  if (channelAnalysis.weakest && channelAnalysis.weakest.pctChange < -10) {
-    attention.push(`${channelAnalysis.weakest.channel} channel declined ${Math.abs(channelAnalysis.weakest.pctChange).toFixed(1)}% -- largest decline of any channel.`)
+  lines.push({
+    text: `Gross Margin after Daily Expenses and Managing Partner Salary: ${money(current.adjustedGrossMargin)}${
+      current.adjustedGrossMarginPct != null ? ` (${current.adjustedGrossMarginPct.toFixed(1)}% of Sales)` : ''
+    }.`,
+    tone: current.adjustedGrossMargin >= 0 ? 'good' : 'bad',
+  })
+
+  return { lines }
+}
+
+function money(n) {
+  return `S$${Math.abs(n).toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${n < 0 ? ' (loss)' : ''}`
+}
+
+function formatSigned(n) {
+  const sign = n >= 0 ? '+' : '-'
+  return `${sign}S$${Math.abs(n).toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+// Next month's sales target: a 12%-15% growth range over this month's
+// actuals, applied overall and per channel using each channel's own
+// current-month sales as its base.
+function computeNextMonthTarget(current, channelAnalysis) {
+  const LOW_PCT = 12
+  const HIGH_PCT = 15
+  const channels = channelAnalysis.rows.map((c) => ({
+    channel: c.channel,
+    currentSales: c.current,
+    targetLow: round2(c.current * (1 + LOW_PCT / 100)),
+    targetHigh: round2(c.current * (1 + HIGH_PCT / 100)),
+  }))
+  return {
+    lowPct: LOW_PCT,
+    highPct: HIGH_PCT,
+    currentSales: current.revenue,
+    targetLow: round2(current.revenue * (1 + LOW_PCT / 100)),
+    targetHigh: round2(current.revenue * (1 + HIGH_PCT / 100)),
+    channels,
   }
-
-  return { lines, attention: attention.slice(0, 5) }
 }
 
 export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
@@ -477,7 +515,8 @@ export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
     { label: 'Closing Stock Value', previous: inventory.previousClosingStockValue, current: inventory.closingStockValue },
   ].map((k) => ({ ...k, change: k.current != null && k.previous != null ? round2(k.current - k.previous) : null, pctChange: pctChange(k.current, k.previous) }))
 
-  const highlights = computeHighlights({ current, previous, channelAnalysis, costCutting, inventory })
+  const highlights = computeHighlights({ current, previous })
+  const nextMonthTarget = computeNextMonthTarget(current, channelAnalysis)
 
   const previousMonthHasData = raw.previousSales.length > 0 || raw.previousPurchases.length > 0 || raw.previousExpenses.length > 0
 
@@ -496,5 +535,6 @@ export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
     reconciliation,
     momKpis,
     highlights,
+    nextMonthTarget,
   }
 }
