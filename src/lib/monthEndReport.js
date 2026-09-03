@@ -404,11 +404,6 @@ function computeHighlights({ current, previous }) {
   }
 
   lines.push({
-    text: `Managing Partner Salary was ${money(current.partnerFee)} (${current.feeRatePercent}% of Gross Profit).`,
-    tone: 'neutral',
-  })
-
-  lines.push({
     text: `Gross Margin after Daily Expenses and Managing Partner Salary: ${money(current.adjustedGrossMargin)}${
       current.adjustedGrossMarginPct != null ? ` (${current.adjustedGrossMarginPct.toFixed(1)}% of Sales)` : ''
     }.`,

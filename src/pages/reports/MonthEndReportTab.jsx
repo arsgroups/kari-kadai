@@ -1,9 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts'
 import { fetchMonthEndRawData } from '../../lib/monthEndReportData'
 import { computeMonthEndReport } from '../../lib/monthEndReport'
 import { formatMoney } from '../../lib/format'
+import { COMPANY } from '../../lib/companyInfo'
 import ReportPrintHeader from '../../components/ReportPrintHeader'
+
+const BRAND = [122, 31, 31]
+const GOOD = [26, 127, 55]
+const BAD = [192, 57, 43]
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -30,6 +35,10 @@ function pctDiff(current, previous) {
   if (previous == null || current == null) return null
   if (previous === 0) return current === 0 ? 0 : null
   return ((current - previous) / Math.abs(previous)) * 100
+}
+
+function diffText(diff) {
+  return `${diff >= 0 ? '+' : '-'}${formatMoney(Math.abs(diff))} vs last month`
 }
 
 function ChangeBadge({ value, isPct }) {
@@ -68,6 +77,9 @@ export default function MonthEndReportTab() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [report, setReport] = useState(null)
+  const [pdfError, setPdfError] = useState('')
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const chartRef = useRef(null)
 
   async function generate() {
     setLoading(true)
@@ -80,6 +92,296 @@ export default function MonthEndReportTab() {
       setReport(null)
     }
     setLoading(false)
+  }
+
+  // Builds a proper laid-out, multi-page, corporate-styled PDF -- section
+  // headings, bordered KPI cards, tables, a captured copy of the channel
+  // chart, and page numbers -- rather than relying on the browser's own
+  // print-to-PDF, which can't do any of that.
+  async function downloadPdf() {
+    if (!report) return
+    setDownloadingPdf(true)
+    setPdfError('')
+    const r = report
+    const [prevY, prevM] = previousMonthOf(year, month)
+    const [nextY, nextM] = nextMonthOf(year, month)
+    const growthPct = pctDiff(r.current.revenue, r.previous.revenue)
+    const growthValue = r.previousMonthHasData ? r.current.revenue - r.previous.revenue : null
+
+    try {
+      const [{ default: jsPDF }, autoTableModule, html2canvasModule] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+        import('html2canvas'),
+      ])
+      const autoTable = autoTableModule.default
+      const html2canvas = html2canvasModule.default
+
+      const doc = new jsPDF()
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const marginX = 14
+      const usableWidth = pageWidth - marginX * 2
+      let y = 20
+
+      function ensureSpace(needed) {
+        if (y + needed > pageHeight - 22) {
+          doc.addPage()
+          y = 20
+        }
+      }
+
+      function sectionTitle(text) {
+        ensureSpace(14)
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(13)
+        doc.setTextColor(...BRAND)
+        doc.text(text, marginX, y)
+        doc.setDrawColor(...BRAND)
+        doc.setLineWidth(0.6)
+        doc.line(marginX, y + 1.8, pageWidth - marginX, y + 1.8)
+        doc.setTextColor(20, 20, 20)
+        y += 9.5
+      }
+
+      function kpiRow(cards) {
+        const gap = 6
+        const cardW = (usableWidth - gap * (cards.length - 1)) / cards.length
+        const cardH = 26
+        ensureSpace(cardH + 8)
+        cards.forEach((c, i) => {
+          const x = marginX + i * (cardW + gap)
+          doc.setDrawColor(220, 214, 208)
+          doc.setLineWidth(0.3)
+          doc.roundedRect(x, y, cardW, cardH, 2, 2)
+          doc.setFont('helvetica', 'normal')
+          doc.setFontSize(8.5)
+          doc.setTextColor(120, 110, 100)
+          doc.text(c.label.toUpperCase(), x + 4, y + 7)
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(13.5)
+          doc.setTextColor(30, 30, 30)
+          doc.text(c.value, x + 4, y + 16)
+          if (c.compareText) {
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(8)
+            doc.setTextColor(...(c.compareGood ? GOOD : BAD))
+            doc.text(c.compareText, x + 4, y + 22)
+          }
+        })
+        doc.setTextColor(20, 20, 20)
+        y += cardH + 9
+      }
+
+      // ---- Header ----
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(16)
+      doc.setTextColor(...BRAND)
+      doc.text(COMPANY.name, marginX, y)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8.5)
+      doc.setTextColor(90, 90, 90)
+      doc.text(`UEN: ${COMPANY.uen}  |  ${COMPANY.addressLine1}, ${COMPANY.addressLine2}`, marginX, y + 5.5)
+      doc.setDrawColor(...BRAND)
+      doc.setLineWidth(0.8)
+      doc.line(marginX, y + 9, pageWidth - marginX, y + 9)
+      y += 17
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(18)
+      doc.setTextColor(20, 20, 20)
+      doc.text('MONTH END REPORT (GP)', pageWidth / 2, y, { align: 'center' })
+      y += 7.5
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(11)
+      doc.text(`Reporting Period: ${monthLabel(year, month)}`, pageWidth / 2, y, { align: 'center' })
+      y += 5.5
+      doc.setFontSize(9)
+      doc.setTextColor(110, 110, 110)
+      doc.text(`Compared against ${monthLabel(prevY, prevM)}  ·  Prepared ${new Date().toLocaleString('en-SG')}`, pageWidth / 2, y, { align: 'center' })
+      y += 5
+      doc.setFont('helvetica', 'italic')
+      doc.setFontSize(8)
+      doc.text('Confidential — prepared for internal management and stakeholder review only.', pageWidth / 2, y, { align: 'center' })
+      doc.setTextColor(20, 20, 20)
+      y += 11
+
+      // ---- Dashboard ----
+      sectionTitle('Dashboard')
+      kpiRow([
+        {
+          label: 'Sales',
+          value: r.current.hasSalesData ? formatMoney(r.current.revenue) : 'N/A',
+          compareText: r.previous.hasSalesData ? diffText(r.current.revenue - r.previous.revenue) : null,
+          compareGood: r.current.revenue - r.previous.revenue >= 0,
+        },
+        {
+          label: 'Purchase',
+          value: r.current.hasPurchaseData ? formatMoney(r.current.cogs) : 'N/A',
+          compareText: r.previous.hasPurchaseData ? diffText(r.current.cogs - r.previous.cogs) : null,
+          compareGood: r.current.cogs - r.previous.cogs <= 0,
+        },
+        {
+          label: 'Gross Margin',
+          value: formatMoney(r.current.adjustedGrossMargin),
+          compareText: r.previousMonthHasData ? diffText(r.current.adjustedGrossMargin - r.previous.adjustedGrossMargin) : null,
+          compareGood: r.current.adjustedGrossMargin - r.previous.adjustedGrossMargin >= 0,
+        },
+      ])
+
+      // ---- Performance Summary ----
+      sectionTitle('Performance Summary')
+      r.highlights.lines.forEach((line) => {
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(10.5)
+        const wrapped = doc.splitTextToSize(line.text, usableWidth - 6)
+        ensureSpace(wrapped.length * 5.2 + 3)
+        const color = line.tone === 'good' ? GOOD : line.tone === 'bad' ? BAD : [20, 20, 20]
+        doc.setFillColor(...color)
+        doc.circle(marginX + 1, y - 1.6, 0.9, 'F')
+        doc.setTextColor(...color)
+        doc.text(wrapped, marginX + 5, y)
+        y += wrapped.length * 5.2 + 3
+      })
+      doc.setTextColor(20, 20, 20)
+      y += 2
+
+      // ---- P&L Statement ----
+      sectionTitle('Profit & Loss Statement')
+      autoTable(doc, {
+        startY: y,
+        margin: { left: marginX, right: marginX },
+        body: [
+          ['Revenue — Total Sales', r.current.hasSalesData ? formatMoney(r.current.revenue) : 'Data unavailable'],
+          ['Cost of Sales — Purchases / COGS', r.current.hasPurchaseData ? formatMoney(r.current.cogs) : 'Data unavailable'],
+          [
+            { content: '= Gross Profit', styles: { fontStyle: 'bold' } },
+            { content: formatMoney(r.current.grossProfit), styles: { fontStyle: 'bold' } },
+          ],
+          ['Daily Expenses', formatMoney(r.current.dailyExpenses)],
+          [`Managing Partner Salary (${r.feeRatePercent}%)`, formatMoney(r.current.partnerFee)],
+          [
+            { content: '= Gross Profit Margin', styles: { fontStyle: 'bold', fontSize: 11 } },
+            {
+              content: `${formatMoney(r.current.adjustedGrossMargin)}${
+                r.current.adjustedGrossMarginPct != null ? ` (${r.current.adjustedGrossMarginPct.toFixed(1)}%)` : ''
+              }`,
+              styles: { fontStyle: 'bold', fontSize: 11, textColor: r.current.adjustedGrossMargin >= 0 ? GOOD : BAD },
+            },
+          ],
+        ],
+        theme: 'plain',
+        styles: { fontSize: 10, cellPadding: 2.4 },
+        columnStyles: { 0: { cellWidth: usableWidth - 50 }, 1: { halign: 'right', cellWidth: 50 } },
+      })
+      y = doc.lastAutoTable.finalY + 10
+
+      // ---- Sales & Channel Performance ----
+      sectionTitle('Sales & Channel Performance')
+      if (growthValue != null) {
+        ensureSpace(22)
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(20)
+        doc.setTextColor(...(growthValue >= 0 ? GOOD : BAD))
+        doc.text(`${growthValue >= 0 ? '▲' : '▼'} ${fmtPct(growthPct)}`, pageWidth / 2, y, { align: 'center' })
+        y += 7.5
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(11)
+        doc.text(`Sales ${growthValue >= 0 ? 'up' : 'down'} ${formatMoney(Math.abs(growthValue))} vs ${monthLabel(prevY, prevM)}`, pageWidth / 2, y, {
+          align: 'center',
+        })
+        doc.setTextColor(20, 20, 20)
+        y += 10
+      }
+
+      if (chartRef.current) {
+        try {
+          const canvas = await html2canvas(chartRef.current, { scale: 2, backgroundColor: '#ffffff' })
+          const imgData = canvas.toDataURL('image/png')
+          const imgWidth = usableWidth
+          const imgHeight = imgWidth * (canvas.height / canvas.width)
+          ensureSpace(imgHeight + 6)
+          doc.addImage(imgData, 'PNG', marginX, y, imgWidth, imgHeight)
+          y += imgHeight + 8
+        } catch {
+          // Chart capture is best-effort -- the table below still has every number.
+        }
+      }
+
+      autoTable(doc, {
+        startY: y,
+        margin: { left: marginX, right: marginX },
+        head: [['Sales Channel', 'Previous Month', 'Current Month', 'Difference', '% Change', 'Contribution %']],
+        body: r.channelAnalysis.rows.map((c) => [
+          c.channel,
+          formatMoney(c.previous),
+          formatMoney(c.current),
+          formatMoney(c.change),
+          fmtPct(c.pctChange),
+          c.contributionPct != null ? `${c.contributionPct.toFixed(1)}%` : 'N/A',
+        ]),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: BRAND },
+      })
+      y = doc.lastAutoTable.finalY + 6
+
+      const insightLines = []
+      if (r.channelAnalysis.best) insightLines.push(`Best Performing Channel: ${r.channelAnalysis.best.channel} (${fmtPct(r.channelAnalysis.best.pctChange)})`)
+      if (r.channelAnalysis.weakest) insightLines.push(`Weakest Growth: ${r.channelAnalysis.weakest.channel} (${fmtPct(r.channelAnalysis.weakest.pctChange)})`)
+      if (r.channelAnalysis.topContributor)
+        insightLines.push(`Largest Revenue Contributor: ${r.channelAnalysis.topContributor.channel} (${r.channelAnalysis.topContributor.contributionPct?.toFixed(1)}% of total sales)`)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9.5)
+      insightLines.forEach((t) => {
+        ensureSpace(5.5)
+        doc.text(`•  ${t}`, marginX, y)
+        y += 5.2
+      })
+      y += 5
+
+      // ---- Next Month Target ----
+      sectionTitle(`${monthLabel(nextY, nextM)} Target`)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
+      const targetNote = doc.splitTextToSize(
+        `Set at ${r.nextMonthTarget.lowPct}%–${r.nextMonthTarget.highPct}% growth over ${monthLabel(year, month)}'s actual sales, split across channels using each channel's own ${monthLabel(year, month)} sales as its base.`,
+        usableWidth
+      )
+      ensureSpace(targetNote.length * 4.5 + 4)
+      doc.text(targetNote, marginX, y)
+      y += targetNote.length * 4.5 + 4
+
+      kpiRow([
+        { label: `${monthLabel(year, month)} Sales (Base)`, value: formatMoney(r.nextMonthTarget.currentSales) },
+        { label: `Target (${r.nextMonthTarget.lowPct}%)`, value: formatMoney(r.nextMonthTarget.targetLow) },
+        { label: `Target (${r.nextMonthTarget.highPct}%)`, value: formatMoney(r.nextMonthTarget.targetHigh) },
+      ])
+
+      autoTable(doc, {
+        startY: y,
+        margin: { left: marginX, right: marginX },
+        head: [['Channel', `${monthLabel(year, month)} Sales`, `Target (${r.nextMonthTarget.lowPct}%)`, `Target (${r.nextMonthTarget.highPct}%)`]],
+        body: r.nextMonthTarget.channels.map((c) => [c.channel, formatMoney(c.currentSales), formatMoney(c.targetLow), formatMoney(c.targetHigh)]),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: BRAND },
+      })
+
+      // ---- Footer: page numbers on every page ----
+      const pageCount = doc.internal.getNumberOfPages()
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        doc.setTextColor(140, 140, 140)
+        doc.text(`${COMPANY.name} — Confidential`, marginX, pageHeight - 10)
+        doc.text(`Page ${i} of ${pageCount}`, pageWidth - marginX, pageHeight - 10, { align: 'right' })
+      }
+
+      doc.save(`month-end-report-gp-${year}-${String(month).padStart(2, '0')}.pdf`)
+    } catch (e) {
+      setPdfError(e.message || 'Failed to generate PDF.')
+    }
+    setDownloadingPdf(false)
   }
 
   useEffect(() => {
@@ -116,15 +418,19 @@ export default function MonthEndReportTab() {
               {loading ? 'Generating…' : 'Regenerate Report'}
             </button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem' }}>
+            <button className="btn" onClick={downloadPdf} disabled={!r || downloadingPdf}>
+              {downloadingPdf ? 'Building PDF…' : 'Download PDF'}
+            </button>
             <button className="btn-secondary" onClick={() => window.print()} disabled={!r}>
-              Print / Export PDF (browser print)
+              Print
             </button>
           </div>
         </div>
       </div>
 
       {error && <div className="inline-error">{error}</div>}
+      {pdfError && <div className="inline-error no-print">PDF generation failed: {pdfError}</div>}
       {loading && <p className="muted">Generating report…</p>}
 
       {r && (
@@ -150,10 +456,6 @@ export default function MonthEndReportTab() {
             <KpiCard label="Purchase" value={r.current.hasPurchaseData ? formatMoney(r.current.cogs) : 'Data unavailable'} compare={r.previous.hasPurchaseData ? r.current.cogs - r.previous.cogs : null} invertGood />
             <KpiCard label="Gross Margin" value={formatMoney(r.current.adjustedGrossMargin)} compare={r.previousMonthHasData ? r.current.adjustedGrossMargin - r.previous.adjustedGrossMargin : null} />
           </div>
-          <p className="muted" style={{ fontSize: '0.8rem' }}>
-            Gross Margin = Gross Profit − Daily Expenses − Managing Partner Salary ({r.feeRatePercent}% of Gross
-            Profit).
-          </p>
 
           {/* ==================== PERFORMANCE SUMMARY ==================== */}
           <h2>Performance Summary</h2>
@@ -162,14 +464,18 @@ export default function MonthEndReportTab() {
               <li
                 key={i}
                 style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.6rem',
                   fontSize: '1.35rem',
                   fontWeight: 700,
                   lineHeight: 1.5,
-                  marginBottom: '0.6rem',
+                  marginBottom: '0.75rem',
                   color: line.tone === 'good' ? 'var(--success)' : line.tone === 'bad' ? 'var(--danger)' : 'inherit',
                 }}
               >
-                {line.text}
+                <span aria-hidden="true" style={{ fontSize: '1.1rem', marginTop: '0.15rem' }}>●</span>
+                <span>{line.text}</span>
               </li>
             ))}
           </ul>
@@ -235,7 +541,7 @@ export default function MonthEndReportTab() {
             </div>
           )}
 
-          <div className="no-print" style={{ maxWidth: 760, margin: '0 auto' }}>
+          <div ref={chartRef} className="no-print" style={{ maxWidth: 760, margin: '0 auto', background: '#fff' }}>
             <ResponsiveContainer width="100%" height={380}>
               <BarChart data={r.channelAnalysis.rows}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -281,7 +587,7 @@ export default function MonthEndReportTab() {
             )}
             {r.channelAnalysis.weakest && (
               <li>
-                <strong>Weakest Channel:</strong> {r.channelAnalysis.weakest.channel} ({fmtPct(r.channelAnalysis.weakest.pctChange)})
+                <strong>Weakest Growth:</strong> {r.channelAnalysis.weakest.channel} ({fmtPct(r.channelAnalysis.weakest.pctChange)})
               </li>
             )}
             {r.channelAnalysis.topContributor && (
