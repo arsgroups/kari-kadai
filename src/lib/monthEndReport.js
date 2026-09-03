@@ -422,24 +422,20 @@ function formatSigned(n) {
   return `${sign}S$${Math.abs(n).toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-// Next month's sales target: a 12%-15% growth range over this month's
-// actuals, applied overall and per channel using each channel's own
-// current-month sales as its base.
+// Next month's sales target: 12% growth over this month's actuals, applied
+// overall and per channel using each channel's own current-month sales as
+// its base.
 function computeNextMonthTarget(current, channelAnalysis) {
-  const LOW_PCT = 12
-  const HIGH_PCT = 15
+  const TARGET_PCT = 12
   const channels = channelAnalysis.rows.map((c) => ({
     channel: c.channel,
     currentSales: c.current,
-    targetLow: round2(c.current * (1 + LOW_PCT / 100)),
-    targetHigh: round2(c.current * (1 + HIGH_PCT / 100)),
+    target: round2(c.current * (1 + TARGET_PCT / 100)),
   }))
   return {
-    lowPct: LOW_PCT,
-    highPct: HIGH_PCT,
+    pct: TARGET_PCT,
     currentSales: current.revenue,
-    targetLow: round2(current.revenue * (1 + LOW_PCT / 100)),
-    targetHigh: round2(current.revenue * (1 + HIGH_PCT / 100)),
+    target: round2(current.revenue * (1 + TARGET_PCT / 100)),
     channels,
   }
 }

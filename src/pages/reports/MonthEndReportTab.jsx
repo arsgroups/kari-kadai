@@ -280,10 +280,25 @@ export default function MonthEndReportTab() {
       sectionTitle('Sales & Channel Performance')
       if (growthValue != null) {
         ensureSpace(22)
+        const growthColor = growthValue >= 0 ? GOOD : BAD
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(20)
-        doc.setTextColor(...(growthValue >= 0 ? GOOD : BAD))
-        doc.text(`${growthValue >= 0 ? '▲' : '▼'} ${fmtPct(growthPct)}`, pageWidth / 2, y, { align: 'center' })
+        const pctText = fmtPct(growthPct)
+        const pctTextWidth = doc.getTextWidth(pctText)
+        const triSize = 6.5
+        const blockWidth = triSize + 3 + pctTextWidth
+        const blockStartX = pageWidth / 2 - blockWidth / 2
+        // Standard PDF fonts don't cover unicode arrow glyphs (renders as
+        // garbage, e.g. "%2") -- draw the up/down indicator as an actual
+        // vector triangle instead of a text character.
+        doc.setFillColor(...growthColor)
+        if (growthValue >= 0) {
+          doc.triangle(blockStartX, y, blockStartX + triSize, y, blockStartX + triSize / 2, y - triSize, 'F')
+        } else {
+          doc.triangle(blockStartX, y - triSize, blockStartX + triSize, y - triSize, blockStartX + triSize / 2, y, 'F')
+        }
+        doc.setTextColor(...growthColor)
+        doc.text(pctText, blockStartX + triSize + 3, y, { align: 'left' })
         y += 7.5
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(11)
@@ -332,9 +347,12 @@ export default function MonthEndReportTab() {
         insightLines.push(`Largest Revenue Contributor: ${r.channelAnalysis.topContributor.channel} (${r.channelAnalysis.topContributor.contributionPct?.toFixed(1)}% of total sales)`)
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(9.5)
+      doc.setTextColor(20, 20, 20)
       insightLines.forEach((t) => {
         ensureSpace(5.5)
-        doc.text(`•  ${t}`, marginX, y)
+        doc.setFillColor(20, 20, 20)
+        doc.circle(marginX + 0.8, y - 1.4, 0.8, 'F')
+        doc.text(t, marginX + 4, y)
         y += 5.2
       })
       y += 5
@@ -344,7 +362,7 @@ export default function MonthEndReportTab() {
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(9)
       const targetNote = doc.splitTextToSize(
-        `Set at ${r.nextMonthTarget.lowPct}%–${r.nextMonthTarget.highPct}% growth over ${monthLabel(year, month)}'s actual sales, split across channels using each channel's own ${monthLabel(year, month)} sales as its base.`,
+        `Set at ${r.nextMonthTarget.pct}% growth over ${monthLabel(year, month)}'s actual sales, split across channels using each channel's own ${monthLabel(year, month)} sales as its base.`,
         usableWidth
       )
       ensureSpace(targetNote.length * 4.5 + 4)
@@ -353,15 +371,14 @@ export default function MonthEndReportTab() {
 
       kpiRow([
         { label: `${monthLabel(year, month)} Sales (Base)`, value: formatMoney(r.nextMonthTarget.currentSales) },
-        { label: `Target (${r.nextMonthTarget.lowPct}%)`, value: formatMoney(r.nextMonthTarget.targetLow) },
-        { label: `Target (${r.nextMonthTarget.highPct}%)`, value: formatMoney(r.nextMonthTarget.targetHigh) },
+        { label: `Target (${r.nextMonthTarget.pct}%)`, value: formatMoney(r.nextMonthTarget.target) },
       ])
 
       autoTable(doc, {
         startY: y,
         margin: { left: marginX, right: marginX },
-        head: [['Channel', `${monthLabel(year, month)} Sales`, `Target (${r.nextMonthTarget.lowPct}%)`, `Target (${r.nextMonthTarget.highPct}%)`]],
-        body: r.nextMonthTarget.channels.map((c) => [c.channel, formatMoney(c.currentSales), formatMoney(c.targetLow), formatMoney(c.targetHigh)]),
+        head: [['Channel', `${monthLabel(year, month)} Sales`, `Target (${r.nextMonthTarget.pct}%)`]],
+        body: r.nextMonthTarget.channels.map((c) => [c.channel, formatMoney(c.currentSales), formatMoney(c.target)]),
         styles: { fontSize: 9 },
         headStyles: { fillColor: BRAND },
       })
@@ -601,9 +618,8 @@ export default function MonthEndReportTab() {
           {/* ==================== NEXT MONTH TARGET ==================== */}
           <h2>{monthLabel(nextYear, nextMonth)} Target</h2>
           <p className="muted" style={{ fontSize: '0.85rem' }}>
-            Set at {r.nextMonthTarget.lowPct}%–{r.nextMonthTarget.highPct}% growth over {monthLabel(year, month)}'s
-            actual sales, split across channels using each channel's own {monthLabel(year, month)} sales as its
-            base.
+            Set at {r.nextMonthTarget.pct}% growth over {monthLabel(year, month)}'s actual sales, split across
+            channels using each channel's own {monthLabel(year, month)} sales as its base.
           </p>
           <div className="summary-tiles">
             <div className="tile">
@@ -611,12 +627,8 @@ export default function MonthEndReportTab() {
               <div className="tile-value">{formatMoney(r.nextMonthTarget.currentSales)}</div>
             </div>
             <div className="tile">
-              <div className="tile-label">Target ({r.nextMonthTarget.lowPct}%)</div>
-              <div className="tile-value">{formatMoney(r.nextMonthTarget.targetLow)}</div>
-            </div>
-            <div className="tile">
-              <div className="tile-label">Target ({r.nextMonthTarget.highPct}%)</div>
-              <div className="tile-value">{formatMoney(r.nextMonthTarget.targetHigh)}</div>
+              <div className="tile-label">Target ({r.nextMonthTarget.pct}%)</div>
+              <div className="tile-value">{formatMoney(r.nextMonthTarget.target)}</div>
             </div>
           </div>
           <table className="data-table">
@@ -624,8 +636,7 @@ export default function MonthEndReportTab() {
               <tr>
                 <th>Channel</th>
                 <th>{monthLabel(year, month)} Sales</th>
-                <th>Target ({r.nextMonthTarget.lowPct}%)</th>
-                <th>Target ({r.nextMonthTarget.highPct}%)</th>
+                <th>Target ({r.nextMonthTarget.pct}%)</th>
               </tr>
             </thead>
             <tbody>
@@ -633,13 +644,12 @@ export default function MonthEndReportTab() {
                 <tr key={c.channel}>
                   <td>{c.channel}</td>
                   <td>{formatMoney(c.currentSales)}</td>
-                  <td>{formatMoney(c.targetLow)}</td>
-                  <td>{formatMoney(c.targetHigh)}</td>
+                  <td>{formatMoney(c.target)}</td>
                 </tr>
               ))}
               {r.nextMonthTarget.channels.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="muted">No channel sales this month to base a target on.</td>
+                  <td colSpan={3} className="muted">No channel sales this month to base a target on.</td>
                 </tr>
               )}
             </tbody>
