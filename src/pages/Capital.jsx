@@ -2,7 +2,10 @@ import { Fragment, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { formatDate, formatMoney, toISODate } from '../lib/format'
 import { round2 } from '../lib/gst'
+import { COMPANY } from '../lib/companyInfo'
 import { useAuth } from '../contexts/AuthContext'
+
+const BRAND = [122, 31, 31]
 
 const emptyForm = {
   date: toISODate(),
@@ -35,11 +38,17 @@ export default function Capital() {
   const [editingId, setEditingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [expandedId, setExpandedId] = useState(null)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const [pdfError, setPdfError] = useState('')
 
   async function load() {
     setLoading(true)
     const [{ data: txRows, error: txError }, { data: itemRows }] = await Promise.all([
-      supabase.from('capital_transactions').select('*').order('date', { ascending: false }),
+      supabase
+        .from('capital_transactions')
+        .select('*')
+        .order('partner_name', { ascending: true })
+        .order('date', { ascending: false }),
       supabase.from('capital_transaction_items').select('*').order('created_at'),
     ])
     if (txError) setError(txError.message)
@@ -174,6 +183,160 @@ export default function Capital() {
   const totalWithdrawals = round2(rows.filter((r) => r.transaction_type === 'withdrawal').reduce((s, r) => s + r.amount, 0))
   const netCapital = round2(totalContributions - totalWithdrawals)
 
+  // A proper laid-out, corporate-styled PDF -- company header, section
+  // rules in brand color, bordered summary cards, and a full transaction +
+  // detail-line breakdown -- built the same way as Reports -> Month End
+  // Report (GP)'s PDF, so a stakeholder gets the same visual standard here.
+  async function downloadPdf() {
+    setDownloadingPdf(true)
+    setPdfError('')
+    try {
+      const [{ default: jsPDF }, autoTableModule] = await Promise.all([import('jspdf'), import('jspdf-autotable')])
+      const autoTable = autoTableModule.default
+
+      const doc = new jsPDF()
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const marginX = 14
+      const usableWidth = pageWidth - marginX * 2
+      let y = 20
+
+      function ensureSpace(needed) {
+        if (y + needed > pageHeight - 22) {
+          doc.addPage()
+          y = 20
+        }
+      }
+
+      function sectionTitle(text) {
+        ensureSpace(14)
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(13)
+        doc.setTextColor(...BRAND)
+        doc.text(text, marginX, y)
+        doc.setDrawColor(...BRAND)
+        doc.setLineWidth(0.6)
+        doc.line(marginX, y + 1.8, pageWidth - marginX, y + 1.8)
+        doc.setTextColor(20, 20, 20)
+        y += 9.5
+      }
+
+      // ---- Header ----
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(16)
+      doc.setTextColor(...BRAND)
+      doc.text(COMPANY.name, marginX, y)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8.5)
+      doc.setTextColor(90, 90, 90)
+      doc.text(`UEN: ${COMPANY.uen}  |  ${COMPANY.addressLine1}, ${COMPANY.addressLine2}`, marginX, y + 5.5)
+      doc.setDrawColor(...BRAND)
+      doc.setLineWidth(0.8)
+      doc.line(marginX, y + 9, pageWidth - marginX, y + 9)
+      y += 17
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(18)
+      doc.setTextColor(20, 20, 20)
+      doc.text('CAPITAL STATEMENT', pageWidth / 2, y, { align: 'center' })
+      y += 6.5
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
+      doc.setTextColor(110, 110, 110)
+      doc.text(`Prepared ${new Date().toLocaleString('en-SG')}`, pageWidth / 2, y, { align: 'center' })
+      y += 5
+      doc.setFont('helvetica', 'italic')
+      doc.setFontSize(8)
+      doc.text('Confidential — prepared for internal management and stakeholder review only.', pageWidth / 2, y, { align: 'center' })
+      doc.setTextColor(20, 20, 20)
+      y += 11
+
+      // ---- Summary ----
+      sectionTitle('Capital Summary')
+      const cards = [
+        { label: 'Total Contributions', value: formatMoney(totalContributions) },
+        { label: 'Total Withdrawals', value: formatMoney(totalWithdrawals) },
+        { label: 'Net Capital (all-time)', value: formatMoney(netCapital) },
+      ]
+      const gap = 6
+      const cardW = (usableWidth - gap * (cards.length - 1)) / cards.length
+      const cardH = 24
+      ensureSpace(cardH + 8)
+      cards.forEach((c, i) => {
+        const x = marginX + i * (cardW + gap)
+        doc.setDrawColor(220, 214, 208)
+        doc.setLineWidth(0.3)
+        doc.roundedRect(x, y, cardW, cardH, 2, 2)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8.5)
+        doc.setTextColor(120, 110, 100)
+        doc.text(c.label.toUpperCase(), x + 4, y + 8)
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(13.5)
+        doc.setTextColor(30, 30, 30)
+        doc.text(c.value, x + 4, y + 17)
+      })
+      doc.setTextColor(20, 20, 20)
+      y += cardH + 9
+
+      // ---- Transactions (alphabetical by partner, matching the on-screen list) ----
+      sectionTitle('Capital Transactions')
+      autoTable(doc, {
+        startY: y,
+        margin: { left: marginX, right: marginX },
+        head: [['Date', 'Partner / Investor', 'Type', 'Amount', 'Reference']],
+        body: rows.map((r) => [
+          formatDate(r.date),
+          r.partner_name,
+          r.transaction_type === 'contribution' ? 'Contribution' : 'Withdrawal',
+          formatMoney(r.amount),
+          r.reference || '',
+        ]),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: BRAND },
+        didParseCell(data) {
+          if (data.section === 'body' && data.column.index === 2) {
+            data.cell.styles.textColor = data.cell.raw === 'Contribution' ? [26, 127, 55] : [192, 57, 43]
+          }
+        },
+      })
+      y = doc.lastAutoTable.finalY + 10
+
+      // ---- Detail line breakdown ----
+      const detailRows = rows.flatMap((r) =>
+        (itemsByTransaction[r.id] ?? []).map((it) => [formatDate(r.date), r.partner_name, it.description, formatMoney(it.amount)])
+      )
+      if (detailRows.length > 0) {
+        sectionTitle('Transaction Detail Lines')
+        autoTable(doc, {
+          startY: y,
+          margin: { left: marginX, right: marginX },
+          head: [['Date', 'Partner / Investor', 'Description', 'Amount']],
+          body: detailRows,
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: BRAND },
+        })
+        y = doc.lastAutoTable.finalY + 4
+      }
+
+      // ---- Footer: page numbers on every page ----
+      const pageCount = doc.internal.getNumberOfPages()
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        doc.setTextColor(140, 140, 140)
+        doc.text(`${COMPANY.name} — Confidential`, marginX, pageHeight - 10)
+        doc.text(`Page ${i} of ${pageCount}`, pageWidth - marginX, pageHeight - 10, { align: 'right' })
+      }
+
+      doc.save(`capital-statement-${toISODate()}.pdf`)
+    } catch (e) {
+      setPdfError(e.message || 'Failed to generate PDF.')
+    }
+    setDownloadingPdf(false)
+  }
+
   return (
     <div className="page">
       <h1>Capital</h1>
@@ -181,6 +344,13 @@ export default function Capital() {
         Partner contributions and withdrawals only -- kept separate from operating income and expenses. Feeds
         the Capital section of Reports → Month-End Report.
       </p>
+
+      <div className="toolbar no-print">
+        <button className="btn-secondary" onClick={downloadPdf} disabled={downloadingPdf || rows.length === 0}>
+          {downloadingPdf ? 'Building PDF…' : 'Download PDF'}
+        </button>
+      </div>
+      {pdfError && <div className="inline-error no-print">PDF generation failed: {pdfError}</div>}
 
       <div className="summary-tiles">
         <div className="tile">
