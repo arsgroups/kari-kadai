@@ -277,6 +277,11 @@ export default function MonthEndReportTab() {
       y = doc.lastAutoTable.finalY + 10
 
       // ---- Sales & Channel Performance ----
+      // Always starts a fresh page (not just when it happens to overflow),
+      // so the report reads as: page 1 = Dashboard/Summary/P&L, page 2 =
+      // Channel Performance/Next Month Target.
+      doc.addPage()
+      y = 20
       sectionTitle('Sales & Channel Performance')
       if (growthValue != null) {
         ensureSpace(22)
@@ -313,10 +318,18 @@ export default function MonthEndReportTab() {
         try {
           const canvas = await html2canvas(chartRef.current, { scale: 2, backgroundColor: '#ffffff' })
           const imgData = canvas.toDataURL('image/png')
-          const imgWidth = usableWidth
-          const imgHeight = imgWidth * (canvas.height / canvas.width)
-          ensureSpace(imgHeight + 6)
-          doc.addImage(imgData, 'PNG', marginX, y, imgWidth, imgHeight)
+          // Capped, not just aspect-scaled to full width -- the rest of this
+          // page (table, insights, Next Month Target) needs the room too,
+          // and this report is meant to fit in 2 pages total.
+          const maxChartHeight = 60
+          let imgWidth = usableWidth
+          let imgHeight = imgWidth * (canvas.height / canvas.width)
+          if (imgHeight > maxChartHeight) {
+            imgHeight = maxChartHeight
+            imgWidth = imgHeight * (canvas.width / canvas.height)
+          }
+          const imgX = marginX + (usableWidth - imgWidth) / 2
+          doc.addImage(imgData, 'PNG', imgX, y, imgWidth, imgHeight)
           y += imgHeight + 8
         } catch {
           // Chart capture is best-effort -- the table below still has every number.
