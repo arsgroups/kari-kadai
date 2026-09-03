@@ -345,7 +345,10 @@ export default function MonthEndReportTab() {
           formatMoney(c.previous),
           formatMoney(c.current),
           formatMoney(c.change),
-          fmtPct(c.pctChange),
+          {
+            content: fmtPct(c.pctChange),
+            styles: { textColor: c.pctChange == null ? [100, 100, 100] : c.pctChange > 0 ? GOOD : c.pctChange < 0 ? BAD : [20, 20, 20], fontStyle: 'bold' },
+          },
           c.contributionPct != null ? `${c.contributionPct.toFixed(1)}%` : 'N/A',
         ]),
         styles: { fontSize: 9 },
