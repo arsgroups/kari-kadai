@@ -505,6 +505,7 @@ create table if not exists capital_transaction_items (
   capital_transaction_id uuid not null references capital_transactions(id) on delete cascade,
   description text not null,
   amount numeric not null check (amount > 0),
+  position integer not null default 0, -- manual display order within the transaction
   created_at timestamptz not null default now()
 );
 

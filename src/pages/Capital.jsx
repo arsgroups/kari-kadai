@@ -49,7 +49,7 @@ export default function Capital() {
         .select('*')
         .order('partner_name', { ascending: true })
         .order('date', { ascending: false }),
-      supabase.from('capital_transaction_items').select('*').order('created_at'),
+      supabase.from('capital_transaction_items').select('*').order('position').order('created_at'),
     ])
     if (txError) setError(txError.message)
     else setRows(txRows ?? [])
@@ -76,6 +76,20 @@ export default function Capital() {
 
   function removeLineItem(key) {
     setLineItems((prev) => (prev.length > 1 ? prev.filter((l) => l.key !== key) : prev))
+  }
+
+  // Reorders a detail line up/down within the batch -- e.g. moving an
+  // "Opening Stock" line to a specific position -- since the saved order is
+  // otherwise just whatever order the lines were typed in.
+  function moveLineItem(key, direction) {
+    setLineItems((prev) => {
+      const idx = prev.findIndex((l) => l.key === key)
+      const newIdx = idx + direction
+      if (idx === -1 || newIdx < 0 || newIdx >= prev.length) return prev
+      const next = [...prev]
+      ;[next[idx], next[newIdx]] = [next[newIdx], next[idx]]
+      return next
+    })
   }
 
   const validLineItems = lineItems.filter((l) => l.description.trim() && Number(l.amount) > 0)
@@ -126,10 +140,11 @@ export default function Capital() {
       transactionId = created.id
     }
 
-    const itemRows = validLineItems.map((l) => ({
+    const itemRows = validLineItems.map((l, i) => ({
       capital_transaction_id: transactionId,
       description: l.description.trim(),
       amount: round2(Number(l.amount)),
+      position: i,
     }))
     const { error: itemsErr } = await supabase.from('capital_transaction_items').insert(itemRows)
     setSaving(false)
@@ -411,7 +426,7 @@ export default function Capital() {
               </tr>
             </thead>
             <tbody>
-              {lineItems.map((l) => (
+              {lineItems.map((l, i) => (
                 <tr key={l.key}>
                   <td>
                     <input
@@ -432,6 +447,18 @@ export default function Capital() {
                     />
                   </td>
                   <td>
+                    <button type="button" className="btn-secondary" onClick={() => moveLineItem(l.key, -1)} disabled={i === 0} title="Move up">
+                      ↑
+                    </button>{' '}
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => moveLineItem(l.key, 1)}
+                      disabled={i === lineItems.length - 1}
+                      title="Move down"
+                    >
+                      ↓
+                    </button>{' '}
                     <button type="button" className="btn-secondary" onClick={() => removeLineItem(l.key)} disabled={lineItems.length === 1}>
                       ✕
                     </button>
