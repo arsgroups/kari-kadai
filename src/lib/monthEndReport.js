@@ -74,7 +74,8 @@ function computeExpenseSplit(expenseRows) {
   let daily = 0
   let monthly = 0
   let fixedAsset = 0
-  const byCategory = {} // operating only: name -> amount
+  const byCategory = {} // operating (daily+monthly combined), excl. Fixed Asset: name -> amount
+  const monthlyByCategory = {} // monthly-scope only: name -> amount
   const fixedAssetByCategory = {} // Fixed Asset/Capex only: name -> amount
   expenseRows.forEach((e) => {
     const isFixedAsset = e.expense_categories?.is_fixed_asset === true
@@ -84,8 +85,12 @@ function computeExpenseSplit(expenseRows) {
       fixedAssetByCategory[name] = (fixedAssetByCategory[name] ?? 0) + Number(e.amount)
     } else {
       byCategory[name] = (byCategory[name] ?? 0) + Number(e.amount)
-      if (e.scope === 'daily') daily += Number(e.amount)
-      else monthly += Number(e.amount)
+      if (e.scope === 'daily') {
+        daily += Number(e.amount)
+      } else {
+        monthly += Number(e.amount)
+        monthlyByCategory[name] = (monthlyByCategory[name] ?? 0) + Number(e.amount)
+      }
     }
   })
   return {
@@ -94,6 +99,9 @@ function computeExpenseSplit(expenseRows) {
     fixedAsset: round2(fixedAsset),
     operatingTotal: round2(daily + monthly),
     byCategory: Object.entries(byCategory)
+      .map(([name, amount]) => ({ name, amount: round2(amount) }))
+      .sort((a, b) => b.amount - a.amount),
+    monthlyByCategory: Object.entries(monthlyByCategory)
       .map(([name, amount]) => ({ name, amount: round2(amount) }))
       .sort((a, b) => b.amount - a.amount),
     fixedAssetByCategory: Object.entries(fixedAssetByCategory)
@@ -134,7 +142,10 @@ function computePnL({ salesRows, purchasesRows, expenseRows, feeRatePercent }) {
   // as-is including when Gross Profit itself is negative (confirmed
   // business rule: the fee is not floored at zero on a loss month).
   const partnerFee = round2(grossProfit * (feeRatePercent / 100))
-  // 7. Profit After Managing Partner Fee
+  // 7. Profit After Managing Partner Fee (= Gross Profit - Daily Expenses -
+  // Monthly Expenses - Managing Partner Salary -- this is also exactly the
+  // "Net Profit" figure Reports -> Net Profit Report builds on, before Fixed
+  // Assets are considered)
   const profitAfterFee = round2(profitBeforeFee - partnerFee)
   // 8. Fixed Asset / Capital Expenditure (deducted only now, after the fee)
   const fixedAssetExpenses = expenses.fixedAsset
@@ -158,6 +169,7 @@ function computePnL({ salesRows, purchasesRows, expenseRows, feeRatePercent }) {
     monthlyExpenses: expenses.monthly,
     totalOperatingExpenses: expenses.operatingTotal,
     expenseByCategory: expenses.byCategory,
+    monthlyExpenseByCategory: expenses.monthlyByCategory,
     fixedAssetByCategory: expenses.fixedAssetByCategory,
     profitBeforeFee,
     feeRatePercent,
