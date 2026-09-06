@@ -8,6 +8,14 @@ import ReportPrintHeader from '../../components/ReportPrintHeader'
 
 const BRAND = [122, 31, 31]
 
+// How Profit is split between partners. Percentages must add up to 100 --
+// change here to adjust the split (or add/remove partners).
+const PARTNER_SHARES = [
+  { label: 'Partner 1', pct: 50 },
+  { label: 'Partner 2', pct: 25 },
+  { label: 'Partner 3', pct: 25 },
+]
+
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -69,7 +77,6 @@ export default function NetProfitReportTab() {
     : []
   const monthlyTotalCombined = r ? round2(r.current.monthlyExpenses + r.current.fixedAssetExpenses) : null
   const netProfit = r ? round2(r.current.adjustedGrossMargin - monthlyTotalCombined) : null
-  const shareEach = netProfit != null ? netProfit / 2 : null
 
   async function downloadPdf() {
     if (!report) return
@@ -84,6 +91,10 @@ export default function NetProfitReportTab() {
       const pageHeight = doc.internal.pageSize.getHeight()
       const marginX = 14
       const usableWidth = pageWidth - marginX * 2
+      // Every table's rightmost (Amount) column uses this same fixed width,
+      // so every number in the document lines up at the same right edge
+      // regardless of which table it's in.
+      const AMOUNT_W = 40
       let y = 20
 
       function ensureSpace(needed) {
@@ -165,7 +176,7 @@ export default function NetProfitReportTab() {
         ],
         theme: 'plain',
         styles: { fontSize: 10, cellPadding: 2.4 },
-        columnStyles: { 0: { cellWidth: usableWidth - 50 }, 1: { halign: 'right', cellWidth: 50 } },
+        columnStyles: { 0: { cellWidth: usableWidth - AMOUNT_W }, 1: { halign: 'right', cellWidth: AMOUNT_W } },
       })
       y = doc.lastAutoTable.finalY + 10
 
@@ -181,7 +192,7 @@ export default function NetProfitReportTab() {
         styles: { fontSize: 9.5 },
         headStyles: { fillColor: BRAND },
         footStyles: { fontStyle: 'bold', fillColor: [245, 240, 235], textColor: [20, 20, 20] },
-        columnStyles: { 2: { halign: 'right' } },
+        columnStyles: { 0: { cellWidth: 40 }, 2: { halign: 'right', cellWidth: AMOUNT_W } },
       })
       if (monthlyLinesCombined.length === 0) {
         doc.setFont('helvetica', 'italic')
@@ -199,7 +210,7 @@ export default function NetProfitReportTab() {
         margin: { left: marginX, right: marginX },
         body: [
           ['Gross Profit Margin', formatMoney(r.current.adjustedGrossMargin)],
-          ['− Monthly Expenses (incl. Fixed Asset / Capex)', formatMoney(monthlyTotalCombined)],
+          ['− Monthly Expenses', formatMoney(monthlyTotalCombined)],
           [
             { content: '= Profit', styles: { fontStyle: 'bold', fontSize: 12 } },
             {
@@ -210,22 +221,20 @@ export default function NetProfitReportTab() {
         ],
         theme: 'plain',
         styles: { fontSize: 10, cellPadding: 2.4 },
-        columnStyles: { 0: { cellWidth: usableWidth - 50 }, 1: { halign: 'right', cellWidth: 50 } },
+        columnStyles: { 0: { cellWidth: usableWidth - AMOUNT_W }, 1: { halign: 'right', cellWidth: AMOUNT_W } },
       })
       y = doc.lastAutoTable.finalY + 10
 
-      // ---- Partner Share (50% each) ----
-      sectionTitle('Partner Share (50% Each)')
+      // ---- Partner Share ----
+      sectionTitle('Partner Share')
       autoTable(doc, {
         startY: y,
         margin: { left: marginX, right: marginX },
         head: [['Partner', 'Share %', 'Amount']],
-        body: [
-          ['Partner 1', '50%', formatMoney(shareEach)],
-          ['Partner 2', '50%', formatMoney(shareEach)],
-        ],
+        body: PARTNER_SHARES.map((p) => [p.label, `${p.pct}%`, formatMoney(round2(netProfit * (p.pct / 100)))]),
         styles: { fontSize: 10 },
         headStyles: { fillColor: BRAND },
+        columnStyles: { 2: { halign: 'right', cellWidth: AMOUNT_W } },
       })
       y = doc.lastAutoTable.finalY + 4
 
@@ -366,7 +375,7 @@ export default function NetProfitReportTab() {
                 <td>{formatMoney(r.current.adjustedGrossMargin)}</td>
               </tr>
               <tr>
-                <td>− Monthly Expenses (incl. Fixed Asset / Capex)</td>
+                <td>− Monthly Expenses</td>
                 <td>{formatMoney(monthlyTotalCombined)}</td>
               </tr>
               <tr style={{ fontWeight: 700, fontSize: '1.1rem' }}>
@@ -379,7 +388,7 @@ export default function NetProfitReportTab() {
           </table>
 
           {/* ==================== PARTNER SHARE ==================== */}
-          <h2>Partner Share (50% Each)</h2>
+          <h2>Partner Share</h2>
           <table className="data-table" style={{ maxWidth: 480 }}>
             <thead>
               <tr>
@@ -389,16 +398,13 @@ export default function NetProfitReportTab() {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>Partner 1</td>
-                <td>50%</td>
-                <td>{formatMoney(shareEach)}</td>
-              </tr>
-              <tr>
-                <td>Partner 2</td>
-                <td>50%</td>
-                <td>{formatMoney(shareEach)}</td>
-              </tr>
+              {PARTNER_SHARES.map((p) => (
+                <tr key={p.label}>
+                  <td>{p.label}</td>
+                  <td>{p.pct}%</td>
+                  <td>{netProfit != null ? formatMoney(round2(netProfit * (p.pct / 100))) : ''}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
 
