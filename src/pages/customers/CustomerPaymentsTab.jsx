@@ -11,6 +11,9 @@ export default function CustomerPaymentsTab() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState(emptyForm)
+  const [editingId, setEditingId] = useState(null)
+  const [editTypeDraft, setEditTypeDraft] = useState('Cash')
+  const [savingEdit, setSavingEdit] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -50,6 +53,30 @@ export default function CustomerPaymentsTab() {
       return
     }
     setForm({ ...emptyForm, date: form.date })
+    load()
+  }
+
+  // Corrects a Cash/Bank mix-up on an already-recorded payment -- e.g. the
+  // customer actually transferred, but Cash was picked by mistake. Feeds
+  // straight into anything that reads payment_type downstream (e.g. the
+  // Daily Report's "Cash Collected from Old Credit" bucket), so fixing it
+  // here also fixes that.
+  function startEdit(payment) {
+    setEditingId(payment.id)
+    setEditTypeDraft(payment.payment_type)
+    setError('')
+  }
+
+  async function handleSaveEdit(paymentId) {
+    setSavingEdit(true)
+    setError('')
+    const { error } = await supabase.from('customer_payments').update({ payment_type: editTypeDraft }).eq('id', paymentId)
+    setSavingEdit(false)
+    if (error) {
+      setError(error.message)
+      return
+    }
+    setEditingId(null)
     load()
   }
 
@@ -114,6 +141,7 @@ export default function CustomerPaymentsTab() {
                 <th>Amount</th>
                 <th>Type</th>
                 <th>Note</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -122,13 +150,38 @@ export default function CustomerPaymentsTab() {
                   <td>{formatDate(p.date)}</td>
                   <td>{p.customers?.name}</td>
                   <td>{formatMoney(p.amount)}</td>
-                  <td>{p.payment_type}</td>
+                  <td>
+                    {editingId === p.id ? (
+                      <select value={editTypeDraft} onChange={(e) => setEditTypeDraft(e.target.value)}>
+                        <option>Cash</option>
+                        <option>Bank</option>
+                      </select>
+                    ) : (
+                      p.payment_type
+                    )}
+                  </td>
                   <td>{p.note}</td>
+                  <td>
+                    {editingId === p.id ? (
+                      <>
+                        <button className="btn-secondary" disabled={savingEdit} onClick={() => handleSaveEdit(p.id)}>
+                          {savingEdit ? 'Saving…' : 'Save'}
+                        </button>{' '}
+                        <button className="btn-secondary" disabled={savingEdit} onClick={() => setEditingId(null)}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button className="btn-secondary" onClick={() => startEdit(p)}>
+                        Edit
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
               {payments.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted">
+                  <td colSpan={6} className="muted">
                     No payments recorded yet.
                   </td>
                 </tr>
