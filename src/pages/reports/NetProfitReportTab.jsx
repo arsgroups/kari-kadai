@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchMonthEndRawData } from '../../lib/monthEndReportData'
 import { computeMonthEndReport } from '../../lib/monthEndReport'
-import { formatDate, formatMoney } from '../../lib/format'
+import { formatMoney } from '../../lib/format'
 import { round2 } from '../../lib/gst'
 import { COMPANY } from '../../lib/companyInfo'
 import ReportPrintHeader from '../../components/ReportPrintHeader'
@@ -24,18 +24,6 @@ function defaultReportMonth() {
   const now = new Date()
   const currentMonth = now.getMonth() + 1
   return currentMonth === 1 ? { year: now.getFullYear() - 1, month: 12 } : { year: now.getFullYear(), month: currentMonth - 1 }
-}
-
-// Combines two of the engine's category-total arrays into one (summing
-// where a category name happens to appear in both).
-function combineByCategory(a, b) {
-  const map = {}
-  ;[...a, ...b].forEach((c) => {
-    map[c.name] = (map[c.name] ?? 0) + c.amount
-  })
-  return Object.entries(map)
-    .map(([name, amount]) => ({ name, amount: round2(amount) }))
-    .sort((x, y) => y.amount - x.amount)
 }
 
 // Starts from the same Profit & Loss Statement as Reports -> Month End
@@ -79,7 +67,6 @@ export default function NetProfitReportTab() {
   const monthlyLinesCombined = r
     ? [...r.current.monthlyExpenseLines, ...r.current.fixedAssetLines].sort((a, b) => a.date.localeCompare(b.date))
     : []
-  const monthlyByCategoryCombined = r ? combineByCategory(r.current.monthlyExpenseByCategory, r.current.fixedAssetByCategory) : []
   const monthlyTotalCombined = r ? round2(r.current.monthlyExpenses + r.current.fixedAssetExpenses) : null
   const netProfit = r ? round2(r.current.adjustedGrossMargin - monthlyTotalCombined) : null
   const shareEach = netProfit != null ? netProfit / 2 : null
@@ -182,19 +169,19 @@ export default function NetProfitReportTab() {
       })
       y = doc.lastAutoTable.finalY + 10
 
-      // ---- Monthly Expenses (step by step, every entry with its description --
-      // includes Fixed Asset / Capex spend too, unlike Month End Report (GP)) ----
+      // ---- Monthly Expenses (Category, Description, Amount only -- includes
+      // Fixed Asset / Capex spend too, unlike Month End Report (GP)) ----
       sectionTitle('Monthly Expenses')
       autoTable(doc, {
         startY: y,
         margin: { left: marginX, right: marginX },
-        head: [['Date', 'Category', 'Description', 'Amount']],
-        body: monthlyLinesCombined.map((l) => [formatDate(l.date), l.category, l.description || '—', formatMoney(l.amount)]),
-        foot: [[{ content: 'Total Monthly Expenses', colSpan: 3 }, formatMoney(monthlyTotalCombined)]],
-        styles: { fontSize: 9 },
+        head: [['Category', 'Description', 'Amount']],
+        body: monthlyLinesCombined.map((l) => [l.category, l.description || '—', formatMoney(l.amount)]),
+        foot: [[{ content: 'Total Monthly Expenses', colSpan: 2 }, formatMoney(monthlyTotalCombined)]],
+        styles: { fontSize: 9.5 },
         headStyles: { fillColor: BRAND },
         footStyles: { fontStyle: 'bold', fillColor: [245, 240, 235], textColor: [20, 20, 20] },
-        columnStyles: { 3: { halign: 'right' } },
+        columnStyles: { 2: { halign: 'right' } },
       })
       if (monthlyLinesCombined.length === 0) {
         doc.setFont('helvetica', 'italic')
@@ -203,28 +190,7 @@ export default function NetProfitReportTab() {
         doc.text('No monthly expenses recorded this month.', marginX, doc.lastAutoTable.finalY + 6)
         doc.setTextColor(20, 20, 20)
       }
-      y = doc.lastAutoTable.finalY + 8
-
-      if (monthlyByCategoryCombined.length > 0) {
-        ensureSpace(14)
-        doc.setFont('helvetica', 'bold')
-        doc.setFontSize(10)
-        doc.setTextColor(20, 20, 20)
-        doc.text('By Category', marginX, y)
-        y += 5
-        autoTable(doc, {
-          startY: y,
-          margin: { left: marginX, right: marginX },
-          head: [['Category', 'Amount']],
-          body: monthlyByCategoryCombined.map((c) => [c.name, formatMoney(c.amount)]),
-          styles: { fontSize: 9 },
-          headStyles: { fillColor: BRAND },
-          columnStyles: { 0: { cellWidth: usableWidth - 50 }, 1: { halign: 'right', cellWidth: 50 } },
-        })
-        y = doc.lastAutoTable.finalY + 10
-      } else {
-        y += 2
-      }
+      y = doc.lastAutoTable.finalY + 10
 
       // ---- Net Profit ----
       sectionTitle('Net Profit')
@@ -361,16 +327,9 @@ export default function NetProfitReportTab() {
 
           {/* ==================== MONTHLY EXPENSES ==================== */}
           <h2>Monthly Expenses</h2>
-          <p className="muted" style={{ fontSize: '0.8rem' }}>
-            Every individual entry this month (Settings → Monthly Expenses), including Fixed Asset / Capex
-            spend (Furniture, Aircon, Software...) — unlike Month End Report (GP), this report counts it as
-            part of Monthly Expenses rather than showing it separately. Not just category totals, either, so
-            nothing looks "missing" behind a merged category subtotal.
-          </p>
-          <table className="data-table">
+          <table className="data-table" style={{ maxWidth: 560 }}>
             <thead>
               <tr>
-                <th>Date</th>
                 <th>Category</th>
                 <th>Description</th>
                 <th>Amount</th>
@@ -379,7 +338,6 @@ export default function NetProfitReportTab() {
             <tbody>
               {monthlyLinesCombined.map((l, i) => (
                 <tr key={i}>
-                  <td>{formatDate(l.date)}</td>
                   <td>{l.category}</td>
                   <td>{l.description || '—'}</td>
                   <td>{formatMoney(l.amount)}</td>
@@ -387,39 +345,17 @@ export default function NetProfitReportTab() {
               ))}
               {monthlyLinesCombined.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="muted">No monthly expenses recorded this month.</td>
+                  <td colSpan={3} className="muted">No monthly expenses recorded this month.</td>
                 </tr>
               )}
             </tbody>
             <tfoot>
               <tr style={{ fontWeight: 700 }}>
-                <td colSpan={3}>Total Monthly Expenses</td>
+                <td colSpan={2}>Total Monthly Expenses</td>
                 <td>{formatMoney(monthlyTotalCombined)}</td>
               </tr>
             </tfoot>
           </table>
-
-          {monthlyByCategoryCombined.length > 0 && (
-            <>
-              <h3>By Category</h3>
-              <table className="data-table" style={{ maxWidth: 480 }}>
-                <thead>
-                  <tr>
-                    <th>Category</th>
-                    <th>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthlyByCategoryCombined.map((c) => (
-                    <tr key={c.name}>
-                      <td>{c.name}</td>
-                      <td>{formatMoney(c.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          )}
 
           {/* ==================== NET PROFIT ==================== */}
           <h2>Net Profit</h2>
