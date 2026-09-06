@@ -123,7 +123,7 @@ export default function NetProfitReportTab() {
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(18)
       doc.setTextColor(20, 20, 20)
-      doc.text('NET PROFIT REPORT', pageWidth / 2, y, { align: 'center' })
+      doc.text('PROFIT REPORT', pageWidth / 2, y, { align: 'center' })
       y += 6.5
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(11)
@@ -192,16 +192,16 @@ export default function NetProfitReportTab() {
       }
       y = doc.lastAutoTable.finalY + 10
 
-      // ---- Net Profit ----
-      sectionTitle('Net Profit')
+      // ---- Profit ----
+      sectionTitle('Profit')
       autoTable(doc, {
         startY: y,
         margin: { left: marginX, right: marginX },
         body: [
-          ['Gross Profit Margin (Gross Profit − Daily Expenses − Managing Partner Salary)', formatMoney(r.current.adjustedGrossMargin)],
+          ['Gross Profit Margin', formatMoney(r.current.adjustedGrossMargin)],
           ['− Monthly Expenses (incl. Fixed Asset / Capex)', formatMoney(monthlyTotalCombined)],
           [
-            { content: '= Net Profit', styles: { fontStyle: 'bold', fontSize: 12 } },
+            { content: '= Profit', styles: { fontStyle: 'bold', fontSize: 12 } },
             {
               content: formatMoney(netProfit),
               styles: { fontStyle: 'bold', fontSize: 12, textColor: netProfit >= 0 ? [26, 127, 55] : [192, 57, 43] },
@@ -240,7 +240,7 @@ export default function NetProfitReportTab() {
         doc.text(`Page ${i} of ${pageCount}`, pageWidth - marginX, pageHeight - 10, { align: 'right' })
       }
 
-      doc.save(`net-profit-report-${year}-${String(month).padStart(2, '0')}.pdf`)
+      doc.save(`profit-report-${year}-${String(month).padStart(2, '0')}.pdf`)
     } catch (e) {
       setPdfError(e.message || 'Failed to generate PDF.')
     }
@@ -249,7 +249,7 @@ export default function NetProfitReportTab() {
 
   return (
     <div>
-      <ReportPrintHeader title={r ? `Net Profit Report — ${monthLabel(year, month)}` : 'Net Profit Report'} />
+      <ReportPrintHeader title={r ? `Profit Report — ${monthLabel(year, month)}` : 'Profit Report'} />
 
       <div className="card no-print">
         <div className="form-grid">
@@ -282,7 +282,7 @@ export default function NetProfitReportTab() {
 
       {r && (
         <div className="invoice-sheet">
-          <h1 style={{ marginBottom: 0 }}>Net Profit Report</h1>
+          <h1 style={{ marginBottom: 0 }}>Profit Report</h1>
           <p className="muted" style={{ marginTop: '0.2rem' }}>
             Reporting Period: <strong>{monthLabel(year, month)}</strong> · Prepared {new Date().toLocaleString('en-SG')}
           </p>
@@ -357,12 +357,12 @@ export default function NetProfitReportTab() {
             </tfoot>
           </table>
 
-          {/* ==================== NET PROFIT ==================== */}
-          <h2>Net Profit</h2>
+          {/* ==================== PROFIT ==================== */}
+          <h2>Profit</h2>
           <table className="data-table" style={{ maxWidth: 560 }}>
             <tbody>
               <tr>
-                <td>Gross Profit Margin (Gross Profit − Daily Expenses − Managing Partner Salary)</td>
+                <td>Gross Profit Margin</td>
                 <td>{formatMoney(r.current.adjustedGrossMargin)}</td>
               </tr>
               <tr>
@@ -370,7 +370,7 @@ export default function NetProfitReportTab() {
                 <td>{formatMoney(monthlyTotalCombined)}</td>
               </tr>
               <tr style={{ fontWeight: 700, fontSize: '1.1rem' }}>
-                <td>= Net Profit</td>
+                <td>= Profit</td>
                 <td>
                   <span className={netProfit >= 0 ? 'tag tag-success' : 'tag tag-danger'}>{formatMoney(netProfit)}</span>
                 </td>
