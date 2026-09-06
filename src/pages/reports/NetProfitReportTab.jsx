@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchMonthEndRawData } from '../../lib/monthEndReportData'
 import { computeMonthEndReport } from '../../lib/monthEndReport'
-import { formatMoney } from '../../lib/format'
+import { formatDate, formatMoney } from '../../lib/format'
 import { COMPANY } from '../../lib/companyInfo'
 import ReportPrintHeader from '../../components/ReportPrintHeader'
 
@@ -162,27 +162,48 @@ export default function NetProfitReportTab() {
       })
       y = doc.lastAutoTable.finalY + 10
 
-      // ---- Monthly Expenses (step by step) ----
+      // ---- Monthly Expenses (step by step, every entry with its description) ----
       sectionTitle('Monthly Expenses')
       autoTable(doc, {
         startY: y,
         margin: { left: marginX, right: marginX },
-        head: [['Category', 'Amount']],
-        body: r.current.monthlyExpenseByCategory.map((c) => [c.name, formatMoney(c.amount)]),
-        foot: [['Total Monthly Expenses', formatMoney(r.current.monthlyExpenses)]],
-        styles: { fontSize: 9.5 },
+        head: [['Date', 'Category', 'Description', 'Amount']],
+        body: r.current.monthlyExpenseLines.map((l) => [formatDate(l.date), l.category, l.description || '—', formatMoney(l.amount)]),
+        foot: [[{ content: 'Total Monthly Expenses', colSpan: 3 }, formatMoney(r.current.monthlyExpenses)]],
+        styles: { fontSize: 9 },
         headStyles: { fillColor: BRAND },
         footStyles: { fontStyle: 'bold', fillColor: [245, 240, 235], textColor: [20, 20, 20] },
-        columnStyles: { 0: { cellWidth: usableWidth - 50 }, 1: { halign: 'right', cellWidth: 50 } },
+        columnStyles: { 3: { halign: 'right' } },
       })
-      if (r.current.monthlyExpenseByCategory.length === 0) {
+      if (r.current.monthlyExpenseLines.length === 0) {
         doc.setFont('helvetica', 'italic')
         doc.setFontSize(9)
         doc.setTextColor(120, 120, 120)
         doc.text('No monthly expenses recorded this month.', marginX, doc.lastAutoTable.finalY + 6)
         doc.setTextColor(20, 20, 20)
       }
-      y = doc.lastAutoTable.finalY + 10
+      y = doc.lastAutoTable.finalY + 8
+
+      if (r.current.monthlyExpenseByCategory.length > 0) {
+        ensureSpace(14)
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(10)
+        doc.setTextColor(20, 20, 20)
+        doc.text('By Category', marginX, y)
+        y += 5
+        autoTable(doc, {
+          startY: y,
+          margin: { left: marginX, right: marginX },
+          head: [['Category', 'Amount']],
+          body: r.current.monthlyExpenseByCategory.map((c) => [c.name, formatMoney(c.amount)]),
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: BRAND },
+          columnStyles: { 0: { cellWidth: usableWidth - 50 }, 1: { halign: 'right', cellWidth: 50 } },
+        })
+        y = doc.lastAutoTable.finalY + 10
+      } else {
+        y += 2
+      }
 
       // ---- Net Profit ----
       sectionTitle('Net Profit')
@@ -319,33 +340,63 @@ export default function NetProfitReportTab() {
 
           {/* ==================== MONTHLY EXPENSES ==================== */}
           <h2>Monthly Expenses</h2>
-          <table className="data-table" style={{ maxWidth: 520 }}>
+          <p className="muted" style={{ fontSize: '0.8rem' }}>
+            Every individual entry this month (Settings → Monthly Expenses), not just category totals — so
+            nothing looks "missing" behind a merged category subtotal.
+          </p>
+          <table className="data-table">
             <thead>
               <tr>
+                <th>Date</th>
                 <th>Category</th>
+                <th>Description</th>
                 <th>Amount</th>
               </tr>
             </thead>
             <tbody>
-              {r.current.monthlyExpenseByCategory.map((c) => (
-                <tr key={c.name}>
-                  <td>{c.name}</td>
-                  <td>{formatMoney(c.amount)}</td>
+              {r.current.monthlyExpenseLines.map((l, i) => (
+                <tr key={i}>
+                  <td>{formatDate(l.date)}</td>
+                  <td>{l.category}</td>
+                  <td>{l.description || '—'}</td>
+                  <td>{formatMoney(l.amount)}</td>
                 </tr>
               ))}
-              {r.current.monthlyExpenseByCategory.length === 0 && (
+              {r.current.monthlyExpenseLines.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="muted">No monthly expenses recorded this month.</td>
+                  <td colSpan={4} className="muted">No monthly expenses recorded this month.</td>
                 </tr>
               )}
             </tbody>
             <tfoot>
               <tr style={{ fontWeight: 700 }}>
-                <td>Total Monthly Expenses</td>
+                <td colSpan={3}>Total Monthly Expenses</td>
                 <td>{formatMoney(r.current.monthlyExpenses)}</td>
               </tr>
             </tfoot>
           </table>
+
+          {r.current.monthlyExpenseByCategory.length > 0 && (
+            <>
+              <h3>By Category</h3>
+              <table className="data-table" style={{ maxWidth: 480 }}>
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.current.monthlyExpenseByCategory.map((c) => (
+                    <tr key={c.name}>
+                      <td>{c.name}</td>
+                      <td>{formatMoney(c.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
 
           {/* ==================== NET PROFIT ==================== */}
           <h2>Net Profit</h2>
