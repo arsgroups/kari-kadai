@@ -78,12 +78,14 @@ function computeExpenseSplit(expenseRows) {
   const monthlyByCategory = {} // monthly-scope only: name -> amount
   const fixedAssetByCategory = {} // Fixed Asset/Capex only: name -> amount
   const monthlyLines = [] // monthly-scope only, itemized: { date, category, description, amount }
+  const fixedAssetLines = [] // Fixed Asset/Capex only, itemized: { date, category, description, amount }
   expenseRows.forEach((e) => {
     const isFixedAsset = e.expense_categories?.is_fixed_asset === true
     const name = e.expense_categories?.name ?? 'Uncategorized'
     if (isFixedAsset) {
       fixedAsset += Number(e.amount)
       fixedAssetByCategory[name] = (fixedAssetByCategory[name] ?? 0) + Number(e.amount)
+      fixedAssetLines.push({ date: e.date, category: name, description: e.description || '', amount: round2(Number(e.amount)) })
     } else {
       byCategory[name] = (byCategory[name] ?? 0) + Number(e.amount)
       if (e.scope === 'daily') {
@@ -110,6 +112,7 @@ function computeExpenseSplit(expenseRows) {
     fixedAssetByCategory: Object.entries(fixedAssetByCategory)
       .map(([name, amount]) => ({ name, amount: round2(amount) }))
       .sort((a, b) => b.amount - a.amount),
+    fixedAssetLines: fixedAssetLines.sort((a, b) => a.date.localeCompare(b.date)),
   }
 }
 
@@ -175,6 +178,7 @@ function computePnL({ salesRows, purchasesRows, expenseRows, feeRatePercent }) {
     monthlyExpenseByCategory: expenses.monthlyByCategory,
     monthlyExpenseLines: expenses.monthlyLines,
     fixedAssetByCategory: expenses.fixedAssetByCategory,
+    fixedAssetLines: expenses.fixedAssetLines,
     profitBeforeFee,
     feeRatePercent,
     partnerFee,

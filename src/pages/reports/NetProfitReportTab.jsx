@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchMonthEndRawData } from '../../lib/monthEndReportData'
 import { computeMonthEndReport } from '../../lib/monthEndReport'
 import { formatDate, formatMoney } from '../../lib/format'
+import { round2 } from '../../lib/gst'
 import { COMPANY } from '../../lib/companyInfo'
 import ReportPrintHeader from '../../components/ReportPrintHeader'
 
@@ -25,14 +26,28 @@ function defaultReportMonth() {
   return currentMonth === 1 ? { year: now.getFullYear() - 1, month: 12 } : { year: now.getFullYear(), month: currentMonth - 1 }
 }
 
+// Combines two of the engine's category-total arrays into one (summing
+// where a category name happens to appear in both).
+function combineByCategory(a, b) {
+  const map = {}
+  ;[...a, ...b].forEach((c) => {
+    map[c.name] = (map[c.name] ?? 0) + c.amount
+  })
+  return Object.entries(map)
+    .map(([name, amount]) => ({ name, amount: round2(amount) }))
+    .sort((x, y) => y.amount - x.amount)
+}
+
 // Starts from the same Profit & Loss Statement as Reports -> Month End
 // Report (GP) -- Revenue, COGS, Gross Profit, Daily Expenses, Managing
 // Partner Salary, Gross Profit Margin -- then continues past it: Monthly
-// Expenses (broken out by category), down to a true Net Profit, split 50/50
-// between the two partners. Reuses the exact same calculation engine
-// (computeMonthEndReport) -- current.profitAfterFee already equals Gross
-// Profit - Daily Expenses - Monthly Expenses - Managing Partner Salary, so
-// no new math is needed, only a different, longer presentation of it.
+// Expenses, down to a true Net Profit, split 50/50 between the two
+// partners. "Monthly Expenses" here deliberately includes Fixed Asset /
+// Capex spend too (unlike Month End Report (GP), which keeps them
+// separate) -- Net Profit is recomputed locally as Gross Profit Margin
+// minus that combined total, rather than reusing current.profitAfterFee/
+// finalNetProfit (which follow the GP report's Fixed-Asset-excluded
+// definition and would otherwise disagree with what's shown here).
 export default function NetProfitReportTab() {
   const [year, setYear] = useState(defaultReportMonth().year)
   const [month, setMonth] = useState(defaultReportMonth().month)
@@ -61,7 +76,12 @@ export default function NetProfitReportTab() {
   }, [year, month])
 
   const r = report
-  const netProfit = r ? r.current.profitAfterFee : null
+  const monthlyLinesCombined = r
+    ? [...r.current.monthlyExpenseLines, ...r.current.fixedAssetLines].sort((a, b) => a.date.localeCompare(b.date))
+    : []
+  const monthlyByCategoryCombined = r ? combineByCategory(r.current.monthlyExpenseByCategory, r.current.fixedAssetByCategory) : []
+  const monthlyTotalCombined = r ? round2(r.current.monthlyExpenses + r.current.fixedAssetExpenses) : null
+  const netProfit = r ? round2(r.current.adjustedGrossMargin - monthlyTotalCombined) : null
   const shareEach = netProfit != null ? netProfit / 2 : null
 
   async function downloadPdf() {
@@ -162,20 +182,21 @@ export default function NetProfitReportTab() {
       })
       y = doc.lastAutoTable.finalY + 10
 
-      // ---- Monthly Expenses (step by step, every entry with its description) ----
+      // ---- Monthly Expenses (step by step, every entry with its description --
+      // includes Fixed Asset / Capex spend too, unlike Month End Report (GP)) ----
       sectionTitle('Monthly Expenses')
       autoTable(doc, {
         startY: y,
         margin: { left: marginX, right: marginX },
         head: [['Date', 'Category', 'Description', 'Amount']],
-        body: r.current.monthlyExpenseLines.map((l) => [formatDate(l.date), l.category, l.description || '—', formatMoney(l.amount)]),
-        foot: [[{ content: 'Total Monthly Expenses', colSpan: 3 }, formatMoney(r.current.monthlyExpenses)]],
+        body: monthlyLinesCombined.map((l) => [formatDate(l.date), l.category, l.description || '—', formatMoney(l.amount)]),
+        foot: [[{ content: 'Total Monthly Expenses', colSpan: 3 }, formatMoney(monthlyTotalCombined)]],
         styles: { fontSize: 9 },
         headStyles: { fillColor: BRAND },
         footStyles: { fontStyle: 'bold', fillColor: [245, 240, 235], textColor: [20, 20, 20] },
         columnStyles: { 3: { halign: 'right' } },
       })
-      if (r.current.monthlyExpenseLines.length === 0) {
+      if (monthlyLinesCombined.length === 0) {
         doc.setFont('helvetica', 'italic')
         doc.setFontSize(9)
         doc.setTextColor(120, 120, 120)
@@ -184,7 +205,7 @@ export default function NetProfitReportTab() {
       }
       y = doc.lastAutoTable.finalY + 8
 
-      if (r.current.monthlyExpenseByCategory.length > 0) {
+      if (monthlyByCategoryCombined.length > 0) {
         ensureSpace(14)
         doc.setFont('helvetica', 'bold')
         doc.setFontSize(10)
@@ -195,7 +216,7 @@ export default function NetProfitReportTab() {
           startY: y,
           margin: { left: marginX, right: marginX },
           head: [['Category', 'Amount']],
-          body: r.current.monthlyExpenseByCategory.map((c) => [c.name, formatMoney(c.amount)]),
+          body: monthlyByCategoryCombined.map((c) => [c.name, formatMoney(c.amount)]),
           styles: { fontSize: 9 },
           headStyles: { fillColor: BRAND },
           columnStyles: { 0: { cellWidth: usableWidth - 50 }, 1: { halign: 'right', cellWidth: 50 } },
@@ -212,7 +233,7 @@ export default function NetProfitReportTab() {
         margin: { left: marginX, right: marginX },
         body: [
           ['Gross Profit Margin (Gross Profit − Daily Expenses − Managing Partner Salary)', formatMoney(r.current.adjustedGrossMargin)],
-          ['− Monthly Expenses', formatMoney(r.current.monthlyExpenses)],
+          ['− Monthly Expenses (incl. Fixed Asset / Capex)', formatMoney(monthlyTotalCombined)],
           [
             { content: '= Net Profit', styles: { fontStyle: 'bold', fontSize: 12 } },
             {
@@ -341,7 +362,9 @@ export default function NetProfitReportTab() {
           {/* ==================== MONTHLY EXPENSES ==================== */}
           <h2>Monthly Expenses</h2>
           <p className="muted" style={{ fontSize: '0.8rem' }}>
-            Every individual entry this month (Settings → Monthly Expenses), not just category totals — so
+            Every individual entry this month (Settings → Monthly Expenses), including Fixed Asset / Capex
+            spend (Furniture, Aircon, Software...) — unlike Month End Report (GP), this report counts it as
+            part of Monthly Expenses rather than showing it separately. Not just category totals, either, so
             nothing looks "missing" behind a merged category subtotal.
           </p>
           <table className="data-table">
@@ -354,7 +377,7 @@ export default function NetProfitReportTab() {
               </tr>
             </thead>
             <tbody>
-              {r.current.monthlyExpenseLines.map((l, i) => (
+              {monthlyLinesCombined.map((l, i) => (
                 <tr key={i}>
                   <td>{formatDate(l.date)}</td>
                   <td>{l.category}</td>
@@ -362,7 +385,7 @@ export default function NetProfitReportTab() {
                   <td>{formatMoney(l.amount)}</td>
                 </tr>
               ))}
-              {r.current.monthlyExpenseLines.length === 0 && (
+              {monthlyLinesCombined.length === 0 && (
                 <tr>
                   <td colSpan={4} className="muted">No monthly expenses recorded this month.</td>
                 </tr>
@@ -371,12 +394,12 @@ export default function NetProfitReportTab() {
             <tfoot>
               <tr style={{ fontWeight: 700 }}>
                 <td colSpan={3}>Total Monthly Expenses</td>
-                <td>{formatMoney(r.current.monthlyExpenses)}</td>
+                <td>{formatMoney(monthlyTotalCombined)}</td>
               </tr>
             </tfoot>
           </table>
 
-          {r.current.monthlyExpenseByCategory.length > 0 && (
+          {monthlyByCategoryCombined.length > 0 && (
             <>
               <h3>By Category</h3>
               <table className="data-table" style={{ maxWidth: 480 }}>
@@ -387,7 +410,7 @@ export default function NetProfitReportTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {r.current.monthlyExpenseByCategory.map((c) => (
+                  {monthlyByCategoryCombined.map((c) => (
                     <tr key={c.name}>
                       <td>{c.name}</td>
                       <td>{formatMoney(c.amount)}</td>
@@ -407,8 +430,8 @@ export default function NetProfitReportTab() {
                 <td>{formatMoney(r.current.adjustedGrossMargin)}</td>
               </tr>
               <tr>
-                <td>− Monthly Expenses</td>
-                <td>{formatMoney(r.current.monthlyExpenses)}</td>
+                <td>− Monthly Expenses (incl. Fixed Asset / Capex)</td>
+                <td>{formatMoney(monthlyTotalCombined)}</td>
               </tr>
               <tr style={{ fontWeight: 700, fontSize: '1.1rem' }}>
                 <td>= Net Profit</td>
