@@ -58,6 +58,10 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   const [stockMeta, setStockMeta] = useState({}) // product_id -> { unit, factor, parentId, parentUnit }
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState('')
+  const [editingPaymentMethod, setEditingPaymentMethod] = useState(false)
+  const [paymentMethodDraft, setPaymentMethodDraft] = useState('Cash')
+  const [savingPaymentMethod, setSavingPaymentMethod] = useState(false)
+  const [paymentMethodError, setPaymentMethodError] = useState('')
 
   useEffect(() => {
     load()
@@ -433,6 +437,28 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     load()
   }
 
+  // Corrects a Cash/Bank mix-up entered at sale time -- deliberately scoped
+  // to swapping between just those two (not Credit, which carries due_date/
+  // customer-balance implications this quick control shouldn't touch).
+  function startEditPaymentMethod() {
+    setPaymentMethodDraft(invoice.payment_type === 'Bank' ? 'Bank' : 'Cash')
+    setPaymentMethodError('')
+    setEditingPaymentMethod(true)
+  }
+
+  async function handleSavePaymentMethod() {
+    setSavingPaymentMethod(true)
+    setPaymentMethodError('')
+    const { error } = await supabase.from('sale_invoices').update({ payment_type: paymentMethodDraft }).eq('id', invoiceId)
+    setSavingPaymentMethod(false)
+    if (error) {
+      setPaymentMethodError(error.message)
+      return
+    }
+    setEditingPaymentMethod(false)
+    load()
+  }
+
   async function handleDelete() {
     if (!window.confirm(`Delete invoice ${invoice.invoice_number}? This will restore the stock it deducted and cannot be undone.`))
       return
@@ -611,7 +637,34 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
             <h1 style={{ margin: 0 }}>INVOICE</h1>
             <p style={{ margin: '0.2rem 0' }}>Invoice No: <strong>{invoice.invoice_number}</strong></p>
             <p style={{ margin: '0.2rem 0' }}>Date: {formatDate(invoice.date)}</p>
-            <p style={{ margin: '0.2rem 0' }}>Payment: {invoice.payment_type}</p>
+            <p style={{ margin: '0.2rem 0' }}>
+              Payment: {invoice.payment_type}
+              {invoice.payment_type !== 'Credit' && !editingPaymentMethod && (
+                <button
+                  type="button"
+                  className="btn-secondary no-print"
+                  style={{ marginLeft: '0.5rem', padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}
+                  onClick={startEditPaymentMethod}
+                >
+                  Edit
+                </button>
+              )}
+            </p>
+            {editingPaymentMethod && (
+              <div className="no-print" style={{ margin: '0.3rem 0', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <select value={paymentMethodDraft} onChange={(e) => setPaymentMethodDraft(e.target.value)}>
+                  <option>Cash</option>
+                  <option>Bank</option>
+                </select>
+                <button type="button" className="btn-secondary" disabled={savingPaymentMethod} onClick={handleSavePaymentMethod}>
+                  {savingPaymentMethod ? 'Saving…' : 'Save'}
+                </button>
+                <button type="button" className="btn-secondary" disabled={savingPaymentMethod} onClick={() => setEditingPaymentMethod(false)}>
+                  Cancel
+                </button>
+              </div>
+            )}
+            {paymentMethodError && <div className="inline-error no-print">{paymentMethodError}</div>}
             {invoice.payment_type === 'Credit' && invoice.due_date && (
               <p style={{ margin: '0.2rem 0' }}>Due: {formatDate(invoice.due_date)}</p>
             )}
