@@ -25,16 +25,6 @@ function monthLabel(year, month) {
   return `${MONTH_NAMES[month - 1]} ${year}`
 }
 
-// An expense a partner personally covered out of their own capital (instead
-// of company cash/bank) -- flagged by typing this into the expense's
-// Remarks field. It still counts as a normal P&L expense (reduces Profit
-// exactly like any other expense), but the partner who fronted it is owed
-// that amount back -- so it's added on top of their normal Profit share in
-// the Partner Share table below, not subtracted a second time anywhere.
-function isCapitalRefund(line) {
-  return /paid via capital/i.test(line.remarks || '')
-}
-
 // A "month-end" report is normally run once that month has actually
 // closed -- default to the last full month rather than the current
 // (likely still in-progress) one.
@@ -47,17 +37,13 @@ function defaultReportMonth() {
 // Starts from the same Profit & Loss Statement as Reports -> Month End
 // Report (GP) -- Revenue, COGS, Gross Profit, Daily Expenses, Managing
 // Partner Salary, Gross Profit Margin -- then continues past it: Monthly
-// Expenses, down to a true Profit, split per PARTNER_SHARES. "Monthly
-// Expenses" here deliberately includes Fixed Asset / Capex spend too
-// (unlike Month End Report (GP), which keeps them separate) -- Profit is
-// recomputed locally as Gross Profit Margin minus that combined total,
-// rather than reusing current.profitAfterFee/finalNetProfit (which follow
-// the GP report's Fixed-Asset-excluded definition and would otherwise
-// disagree with what's shown here). Any monthly expense remarked "Paid via
-// Capital" is still counted normally against Profit, but is also refunded
-// back to partners (split the same way) in the Partner Share table, since
-// that money was personally fronted rather than truly spent by the
-// business -- see isCapitalRefund().
+// Expenses, down to a true Net Profit, split 50/50 between the two
+// partners. "Monthly Expenses" here deliberately includes Fixed Asset /
+// Capex spend too (unlike Month End Report (GP), which keeps them
+// separate) -- Net Profit is recomputed locally as Gross Profit Margin
+// minus that combined total, rather than reusing current.profitAfterFee/
+// finalNetProfit (which follow the GP report's Fixed-Asset-excluded
+// definition and would otherwise disagree with what's shown here).
 export default function NetProfitReportTab() {
   const [year, setYear] = useState(defaultReportMonth().year)
   const [month, setMonth] = useState(defaultReportMonth().month)
@@ -91,7 +77,6 @@ export default function NetProfitReportTab() {
     : []
   const monthlyTotalCombined = r ? round2(r.current.monthlyExpenses + r.current.fixedAssetExpenses) : null
   const netProfit = r ? round2(r.current.adjustedGrossMargin - monthlyTotalCombined) : null
-  const capitalRefundTotal = round2(monthlyLinesCombined.filter(isCapitalRefund).reduce((sum, l) => sum + l.amount, 0))
 
   async function downloadPdf() {
     if (!report) return
@@ -202,11 +187,7 @@ export default function NetProfitReportTab() {
         startY: y,
         margin: { left: marginX, right: marginX },
         head: [['Category', 'Description', 'Amount']],
-        body: monthlyLinesCombined.map((l) => [
-          l.category,
-          isCapitalRefund(l) ? `${l.description || '—'}  [Paid via Capital]` : l.description || '—',
-          formatMoney(l.amount),
-        ]),
+        body: monthlyLinesCombined.map((l) => [l.category, l.description || '—', formatMoney(l.amount)]),
         foot: [[{ content: 'Total Monthly Expenses', colSpan: 2 }, formatMoney(monthlyTotalCombined)]],
         styles: { fontSize: 9.5 },
         headStyles: { fillColor: BRAND },
@@ -246,43 +227,14 @@ export default function NetProfitReportTab() {
 
       // ---- Partner Share ----
       sectionTitle('Partner Share')
-      if (capitalRefundTotal > 0) {
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(8.5)
-        doc.setTextColor(110, 110, 110)
-        const refundNote = doc.splitTextToSize(
-          `${formatMoney(capitalRefundTotal)} of this month's expenses were paid via a partner's own capital (tagged "Paid via Capital" above) -- already counted normally as an expense against Profit, and refunded back here on top of each partner's Profit share, split the same way.`,
-          usableWidth
-        )
-        doc.text(refundNote, marginX, y)
-        y += refundNote.length * 4 + 4
-        doc.setTextColor(20, 20, 20)
-      }
       autoTable(doc, {
         startY: y,
         margin: { left: marginX, right: marginX },
-        head:
-          capitalRefundTotal > 0
-            ? [['Partner', 'Share %', 'Profit Share', 'Capital Refund', 'Total Payout']]
-            : [['Partner', 'Share %', 'Profit Share']],
-        body: PARTNER_SHARES.map((p) => {
-          const profitShare = round2(netProfit * (p.pct / 100))
-          if (capitalRefundTotal <= 0) return [p.label, `${p.pct}%`, formatMoney(profitShare)]
-          const capitalShare = round2(capitalRefundTotal * (p.pct / 100))
-          return [
-            p.label,
-            `${p.pct}%`,
-            formatMoney(profitShare),
-            formatMoney(capitalShare),
-            { content: formatMoney(round2(profitShare + capitalShare)), styles: { fontStyle: 'bold' } },
-          ]
-        }),
-        styles: { fontSize: 9.5 },
+        head: [['Partner', 'Share %', 'Amount']],
+        body: PARTNER_SHARES.map((p) => [p.label, `${p.pct}%`, formatMoney(round2(netProfit * (p.pct / 100)))]),
+        styles: { fontSize: 10 },
         headStyles: { fillColor: BRAND },
-        columnStyles:
-          capitalRefundTotal > 0
-            ? { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right', cellWidth: AMOUNT_W } }
-            : { 2: { halign: 'right', cellWidth: AMOUNT_W } },
+        columnStyles: { 2: { halign: 'right', cellWidth: AMOUNT_W } },
       })
       y = doc.lastAutoTable.finalY + 4
 
@@ -396,14 +348,7 @@ export default function NetProfitReportTab() {
               {monthlyLinesCombined.map((l, i) => (
                 <tr key={i}>
                   <td>{l.category}</td>
-                  <td>
-                    {l.description || '—'}
-                    {isCapitalRefund(l) && (
-                      <span className="tag tag-warning" style={{ marginLeft: '0.4rem' }}>
-                        Paid via Capital
-                      </span>
-                    )}
-                  </td>
+                  <td>{l.description || '—'}</td>
                   <td>{formatMoney(l.amount)}</td>
                 </tr>
               ))}
@@ -444,47 +389,22 @@ export default function NetProfitReportTab() {
 
           {/* ==================== PARTNER SHARE ==================== */}
           <h2>Partner Share</h2>
-          {capitalRefundTotal > 0 && (
-            <p className="muted" style={{ fontSize: '0.8rem' }}>
-              {formatMoney(capitalRefundTotal)} of this month's expenses were paid via a partner's own capital
-              (tagged "Paid via Capital" above) — already counted normally as an expense against Profit, and
-              refunded back here on top of each partner's Profit share, split the same way.
-            </p>
-          )}
-          <table className="data-table" style={{ maxWidth: capitalRefundTotal > 0 ? 640 : 480 }}>
+          <table className="data-table" style={{ maxWidth: 480 }}>
             <thead>
               <tr>
                 <th>Partner</th>
                 <th>Share %</th>
-                <th>Profit Share</th>
-                {capitalRefundTotal > 0 && (
-                  <>
-                    <th>Capital Refund</th>
-                    <th>Total Payout</th>
-                  </>
-                )}
+                <th>Amount</th>
               </tr>
             </thead>
             <tbody>
-              {PARTNER_SHARES.map((p) => {
-                const profitShare = netProfit != null ? round2(netProfit * (p.pct / 100)) : null
-                const capitalShare = round2(capitalRefundTotal * (p.pct / 100))
-                return (
-                  <tr key={p.label}>
-                    <td>{p.label}</td>
-                    <td>{p.pct}%</td>
-                    <td>{profitShare != null ? formatMoney(profitShare) : ''}</td>
-                    {capitalRefundTotal > 0 && (
-                      <>
-                        <td>{formatMoney(capitalShare)}</td>
-                        <td style={{ fontWeight: 700 }}>
-                          {profitShare != null ? formatMoney(round2(profitShare + capitalShare)) : ''}
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                )
-              })}
+              {PARTNER_SHARES.map((p) => (
+                <tr key={p.label}>
+                  <td>{p.label}</td>
+                  <td>{p.pct}%</td>
+                  <td>{netProfit != null ? formatMoney(round2(netProfit * (p.pct / 100))) : ''}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
 

@@ -82,7 +82,7 @@ export async function fetchMonthEndRawData({ year, month }) {
     fetchAllRows(
       supabase
         .from('expenses')
-        .select('date, scope, amount, description, remarks, category_id, expense_categories(name, is_fixed_asset)')
+        .select('date, scope, amount, description, category_id, expense_categories(name, is_fixed_asset)')
         .eq('entry_type', 'expense')
         .gte('date', currentStart)
         .lte('date', currentEnd)
@@ -90,7 +90,7 @@ export async function fetchMonthEndRawData({ year, month }) {
     fetchAllRows(
       supabase
         .from('expenses')
-        .select('date, scope, amount, description, remarks, category_id, expense_categories(name, is_fixed_asset)')
+        .select('date, scope, amount, description, category_id, expense_categories(name, is_fixed_asset)')
         .eq('entry_type', 'expense')
         .gte('date', previousStart)
         .lte('date', previousEnd)

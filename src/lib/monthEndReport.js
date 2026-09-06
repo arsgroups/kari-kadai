@@ -77,15 +77,15 @@ function computeExpenseSplit(expenseRows) {
   const byCategory = {} // operating (daily+monthly combined), excl. Fixed Asset: name -> amount
   const monthlyByCategory = {} // monthly-scope only: name -> amount
   const fixedAssetByCategory = {} // Fixed Asset/Capex only: name -> amount
-  const monthlyLines = [] // monthly-scope only, itemized: { date, category, description, remarks, amount }
-  const fixedAssetLines = [] // Fixed Asset/Capex only, itemized: { date, category, description, remarks, amount }
+  const monthlyLines = [] // monthly-scope only, itemized: { date, category, description, amount }
+  const fixedAssetLines = [] // Fixed Asset/Capex only, itemized: { date, category, description, amount }
   expenseRows.forEach((e) => {
     const isFixedAsset = e.expense_categories?.is_fixed_asset === true
     const name = e.expense_categories?.name ?? 'Uncategorized'
     if (isFixedAsset) {
       fixedAsset += Number(e.amount)
       fixedAssetByCategory[name] = (fixedAssetByCategory[name] ?? 0) + Number(e.amount)
-      fixedAssetLines.push({ date: e.date, category: name, description: e.description || '', remarks: e.remarks || '', amount: round2(Number(e.amount)) })
+      fixedAssetLines.push({ date: e.date, category: name, description: e.description || '', amount: round2(Number(e.amount)) })
     } else {
       byCategory[name] = (byCategory[name] ?? 0) + Number(e.amount)
       if (e.scope === 'daily') {
@@ -93,7 +93,7 @@ function computeExpenseSplit(expenseRows) {
       } else {
         monthly += Number(e.amount)
         monthlyByCategory[name] = (monthlyByCategory[name] ?? 0) + Number(e.amount)
-        monthlyLines.push({ date: e.date, category: name, description: e.description || '', remarks: e.remarks || '', amount: round2(Number(e.amount)) })
+        monthlyLines.push({ date: e.date, category: name, description: e.description || '', amount: round2(Number(e.amount)) })
       }
     }
   })
