@@ -547,6 +547,15 @@ create table if not exists partner_fee_rate_history (
   created_at timestamptz not null default now()
 );
 
+-- Single on/off switch: when disabled, Month End Report (GP) and Profit
+-- Report both skip the Managing Partner Salary calculation entirely
+-- (treated as 0%) and hide its line from the P&L Statement.
+create table if not exists partner_salary_settings (
+  id uuid primary key default gen_random_uuid(),
+  enabled boolean not null default true,
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists gst_returns (
   id uuid primary key default gen_random_uuid(),
   period_start date not null,
@@ -845,7 +854,8 @@ begin
       'expense_categories','daily_closing','gst_rate_history',
       'gst_returns','customer_item_prices',
       'yield_configurations','yield_configuration_items','product_channel_config','promotions','promotion_products',
-      'quotations','quotation_items','capital_transactions','capital_transaction_items','partner_fee_rate_history'
+      'quotations','quotation_items','capital_transactions','capital_transaction_items','partner_fee_rate_history',
+      'partner_salary_settings'
     ])
   loop
     execute format('alter table %I enable row level security', t);
@@ -1132,3 +1142,7 @@ on conflict do nothing;
 insert into partner_fee_rate_history (effective_from, rate_percent, note) values
   ('2024-01-01', 6, 'Default Managing Partner Salary')
 on conflict do nothing;
+
+insert into partner_salary_settings (enabled)
+select true
+where not exists (select 1 from partner_salary_settings);

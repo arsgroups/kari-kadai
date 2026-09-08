@@ -134,10 +134,11 @@ export async function fetchMonthEndRawData({ year, month }) {
     ),
   ])
 
-  const [stockAtTwoMonthsAgoEnd, stockAtPreviousEnd, stockAtCurrentEnd] = await Promise.all([
+  const [stockAtTwoMonthsAgoEnd, stockAtPreviousEnd, stockAtCurrentEnd, { data: partnerSalarySettings }] = await Promise.all([
     fetchStockValueAsOf(twoMonthsAgoEnd, products),
     fetchStockValueAsOf(previousEnd, products),
     fetchStockValueAsOf(currentEnd, products),
+    supabase.from('partner_salary_settings').select('enabled').maybeSingle(),
   ])
 
   return {
@@ -153,6 +154,7 @@ export async function fetchMonthEndRawData({ year, month }) {
     capitalDuring,
     products,
     partnerFeeRates,
+    partnerSalaryEnabled: partnerSalarySettings?.enabled ?? true,
     currentSaleItems,
     previousSaleItems,
     currentReturnItems,

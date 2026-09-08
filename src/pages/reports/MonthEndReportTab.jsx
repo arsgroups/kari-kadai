@@ -259,7 +259,7 @@ export default function MonthEndReportTab() {
             { content: formatMoney(r.current.grossProfit), styles: { fontStyle: 'bold' } },
           ],
           ['Daily Expenses', formatMoney(r.current.dailyExpenses)],
-          [`Managing Partner Salary (${r.feeRatePercent}%)`, formatMoney(r.current.partnerFee)],
+          ...(r.partnerSalaryEnabled ? [[`Managing Partner Salary (${r.feeRatePercent}%)`, formatMoney(r.current.partnerFee)]] : []),
           [
             { content: '= Gross Profit Margin', styles: { fontStyle: 'bold', fontSize: 11 } },
             {
@@ -536,10 +536,12 @@ export default function MonthEndReportTab() {
                 <td>Daily Expenses</td>
                 <td>{formatMoney(r.current.dailyExpenses)}</td>
               </tr>
-              <tr>
-                <td>Managing Partner Salary ({r.feeRatePercent}%)</td>
-                <td>{formatMoney(r.current.partnerFee)}</td>
-              </tr>
+              {r.partnerSalaryEnabled && (
+                <tr>
+                  <td>Managing Partner Salary ({r.feeRatePercent}%)</td>
+                  <td>{formatMoney(r.current.partnerFee)}</td>
+                </tr>
+              )}
               <tr style={{ fontWeight: 700, fontSize: '1.05rem' }}>
                 <td>= Gross Profit Margin</td>
                 <td>

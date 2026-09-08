@@ -461,16 +461,21 @@ function computeNextMonthTarget(current, channelAnalysis) {
 }
 
 export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
-  const feeRatePercent =
-    feeRatePercentOverride ??
-    (() => {
-      const sorted = [...raw.partnerFeeRates].sort((a, b) => a.effective_from.localeCompare(b.effective_from))
-      let applicable = sorted[0]?.rate_percent ?? 10
-      sorted.forEach((r) => {
-        if (r.effective_from <= raw.ranges.currentStart) applicable = r.rate_percent
-      })
-      return applicable
-    })()
+  // Settings -> Managing Partner Salary has an Enable checkbox -- when off,
+  // the fee is 0% everywhere (current and previous month alike) and the
+  // report UI hides its line entirely rather than showing a $0.00 row.
+  const partnerSalaryEnabled = raw.partnerSalaryEnabled !== false
+  const feeRatePercent = !partnerSalaryEnabled
+    ? 0
+    : feeRatePercentOverride ??
+      (() => {
+        const sorted = [...raw.partnerFeeRates].sort((a, b) => a.effective_from.localeCompare(b.effective_from))
+        let applicable = sorted[0]?.rate_percent ?? 10
+        sorted.forEach((r) => {
+          if (r.effective_from <= raw.ranges.currentStart) applicable = r.rate_percent
+        })
+        return applicable
+      })()
 
   const currentSaleItemsNetted = netReturns(raw.currentSaleItems, raw.currentReturnItems)
   const previousSaleItemsNetted = netReturns(raw.previousSaleItems, raw.previousReturnItems)
@@ -534,6 +539,7 @@ export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
   return {
     ranges: raw.ranges,
     feeRatePercent,
+    partnerSalaryEnabled,
     current,
     previous,
     previousMonthHasData,
