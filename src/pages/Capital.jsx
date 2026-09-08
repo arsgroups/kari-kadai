@@ -317,19 +317,49 @@ export default function Capital() {
       })
       y = doc.lastAutoTable.finalY + 10
 
-      // ---- Detail line breakdown ----
-      const detailRows = rows.flatMap((r) =>
-        (itemsByTransaction[r.id] ?? []).map((it) => [formatDate(r.date), r.partner_name, it.description, formatMoney(it.amount)])
-      )
+      // ---- Detail line breakdown (chronological, with a running Contributed
+      // − Withdrawn balance -- same convention as a bank/ledger statement) ----
+      const chronologicalRows = [...rows].sort((a, b) => a.date.localeCompare(b.date))
+      let runningBalance = 0
+      const detailRows = []
+      const detailWithdrawalFlags = []
+      chronologicalRows.forEach((r) => {
+        const isWithdrawal = r.transaction_type === 'withdrawal'
+        ;(itemsByTransaction[r.id] ?? []).forEach((it) => {
+          runningBalance = round2(runningBalance + (isWithdrawal ? -it.amount : it.amount))
+          detailRows.push([
+            formatDate(r.date),
+            r.partner_name,
+            it.description,
+            isWithdrawal ? 'Withdrawal' : 'Contribution',
+            isWithdrawal ? `-${formatMoney(it.amount)}` : formatMoney(it.amount),
+            formatMoney(runningBalance),
+          ])
+          detailWithdrawalFlags.push(isWithdrawal)
+        })
+      })
       if (detailRows.length > 0) {
         sectionTitle('Transaction Detail Lines')
         autoTable(doc, {
           startY: y,
           margin: { left: marginX, right: marginX },
-          head: [['Date', 'Partner / Investor', 'Description', 'Amount']],
+          head: [['Date', 'Partner / Investor', 'Description', 'Type', 'Amount', 'Remaining Capital']],
           body: detailRows,
           styles: { fontSize: 9 },
           headStyles: { fillColor: BRAND },
+          columnStyles: {
+            0: { cellWidth: 20 },
+            1: { cellWidth: 28 },
+            3: { cellWidth: 22 },
+            4: { cellWidth: 26, halign: 'right' },
+            5: { cellWidth: 30, halign: 'right' },
+          },
+          didParseCell(data) {
+            if (data.section === 'body' && (data.column.index === 3 || data.column.index === 4)) {
+              const isWithdrawal = detailWithdrawalFlags[data.row.index]
+              data.cell.styles.textColor = isWithdrawal ? [192, 57, 43] : [26, 127, 55]
+            }
+          },
         })
         y = doc.lastAutoTable.finalY + 4
       }
