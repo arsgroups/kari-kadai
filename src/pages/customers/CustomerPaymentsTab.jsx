@@ -13,6 +13,7 @@ export default function CustomerPaymentsTab() {
   const [form, setForm] = useState(emptyForm)
   const [editingId, setEditingId] = useState(null)
   const [editTypeDraft, setEditTypeDraft] = useState('Cash')
+  const [editDateDraft, setEditDateDraft] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
 
   async function load() {
@@ -56,21 +57,26 @@ export default function CustomerPaymentsTab() {
     load()
   }
 
-  // Corrects a Cash/Bank mix-up on an already-recorded payment -- e.g. the
-  // customer actually transferred, but Cash was picked by mistake. Feeds
-  // straight into anything that reads payment_type downstream (e.g. the
-  // Daily Report's "Cash Collected from Old Credit" bucket), so fixing it
-  // here also fixes that.
+  // Corrects a Cash/Bank mix-up, or the date, on an already-recorded payment
+  // -- e.g. the customer actually transferred, but Cash was picked by
+  // mistake, or the date rolled over to the next day by the time it was
+  // entered. Feeds straight into anything that reads payment_type/date
+  // downstream (e.g. the Daily Report's "Cash Collected from Old Credit"
+  // bucket), so fixing it here also fixes that.
   function startEdit(payment) {
     setEditingId(payment.id)
     setEditTypeDraft(payment.payment_type)
+    setEditDateDraft(payment.date)
     setError('')
   }
 
   async function handleSaveEdit(paymentId) {
     setSavingEdit(true)
     setError('')
-    const { error } = await supabase.from('customer_payments').update({ payment_type: editTypeDraft }).eq('id', paymentId)
+    const { error } = await supabase
+      .from('customer_payments')
+      .update({ payment_type: editTypeDraft, date: editDateDraft })
+      .eq('id', paymentId)
     setSavingEdit(false)
     if (error) {
       setError(error.message)
@@ -147,7 +153,13 @@ export default function CustomerPaymentsTab() {
             <tbody>
               {payments.map((p) => (
                 <tr key={p.id}>
-                  <td>{formatDate(p.date)}</td>
+                  <td>
+                    {editingId === p.id ? (
+                      <input type="date" value={editDateDraft} onChange={(e) => setEditDateDraft(e.target.value)} />
+                    ) : (
+                      formatDate(p.date)
+                    )}
+                  </td>
                   <td>{p.customers?.name}</td>
                   <td>{formatMoney(p.amount)}</td>
                   <td>
