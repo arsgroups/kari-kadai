@@ -16,6 +16,7 @@ export default function Closing() {
   const [cashSales, setCashSales] = useState(0)
   const [bankSales, setBankSales] = useState(0)
   const [creditSales, setCreditSales] = useState(0)
+  const [cashPurchases, setCashPurchases] = useState(0)
   const [pettyCashSpent, setPettyCashSpent] = useState(0)
   const [cashCreditCollected, setCashCreditCollected] = useState(0)
   const [actualCounted, setActualCounted] = useState('')
@@ -35,9 +36,10 @@ export default function Closing() {
     setLoading(true)
     setError('')
 
-    const [salesRes, pettyRes, closingRes, outstandingRes, payableRes, creditPaymentsRes, prevClosingRes] =
+    const [salesRes, purchasesRes, pettyRes, closingRes, outstandingRes, payableRes, creditPaymentsRes, prevClosingRes] =
       await Promise.all([
         supabase.from('sale_invoices').select('total, payment_type').eq('date', date),
+        supabase.from('purchase_invoices').select('total, payment_type').eq('date', date),
         supabase
           .from('expenses')
           .select('amount')
@@ -59,6 +61,9 @@ export default function Closing() {
     setCashSales(sales.filter((s) => s.payment_type === 'Cash').reduce((sum, s) => sum + s.total, 0))
     setBankSales(sales.filter((s) => s.payment_type === 'Bank').reduce((sum, s) => sum + s.total, 0))
     setCreditSales(sales.filter((s) => s.payment_type === 'Credit').reduce((sum, s) => sum + s.total, 0))
+
+    const purchases = purchasesRes.data ?? []
+    setCashPurchases(purchases.filter((p) => p.payment_type === 'Cash').reduce((sum, p) => sum + p.total, 0))
 
     setPettyCashSpent((pettyRes.data ?? []).reduce((sum, p) => sum + p.amount, 0))
     setCashCreditCollected(
@@ -93,9 +98,10 @@ export default function Closing() {
   // Each day starts from zero plus any cash the previous day counted but
   // hadn't yet deposited to the bank (its bank deposit variance) -- that
   // cash is still physically in hand, so it opens today's till instead of
-  // vanishing between days.
+  // vanishing between days. Any purchase paid in cash today comes straight
+  // out of the till too, same as a daily expense.
   const cashSalesNum = cashSales
-  const expectedCash = openingCarry + cashSalesNum + cashCreditCollected - pettyCashSpent
+  const expectedCash = openingCarry + cashSalesNum + cashCreditCollected - pettyCashSpent - cashPurchases
   const variance = actualCounted === '' ? null : Number(actualCounted) - expectedCash
   const bankDepositVariance =
     actualCounted === '' || bankDepositAmount === '' ? null : Number(actualCounted) - Number(bankDepositAmount)
@@ -179,6 +185,10 @@ export default function Closing() {
               <tr>
                 <td>− Daily Expenses Today</td>
                 <td>{formatMoney(pettyCashSpent)}</td>
+              </tr>
+              <tr>
+                <td>− Cash Purchases Today</td>
+                <td>{formatMoney(cashPurchases)}</td>
               </tr>
               <tr style={{ fontWeight: 700 }}>
                 <td>= Expected Cash in Hand</td>

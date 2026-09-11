@@ -82,6 +82,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
 
     const purchaseRows = (purchases ?? []).map((p) => ({ ...p, supplierName: p.suppliers?.name ?? '—' }))
     const totalPurchases = purchaseRows.reduce((sum, p) => sum + p.total, 0)
+    const cashPurchases = purchaseRows.filter((p) => p.payment_type === 'Cash').reduce((sum, p) => sum + p.total, 0)
 
     const expenseEntries = (expenseRows ?? []).filter((e) => e.entry_type === 'expense')
     const totalExpenses = expenseEntries.reduce((sum, e) => sum + e.amount, 0)
@@ -91,12 +92,13 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     // cash is still physically in hand, so it opens today's till rather than
     // vanishing between days. Cash physically in the till also includes any
     // old credit collected in cash today, not just today's new Cash-channel
-    // sales.
+    // sales. Any supplier purchase paid in cash today comes straight out of
+    // the till too, same as a daily expense.
     const openingCarry =
       prevClosingRow?.actual_cash_counted != null && prevClosingRow?.bank_deposit_amount != null
         ? round2(prevClosingRow.actual_cash_counted - prevClosingRow.bank_deposit_amount)
         : 0
-    const expectedCash = openingCarry + cashSales + cashCreditCollected - totalExpenses
+    const expectedCash = openingCarry + cashSales + cashCreditCollected - totalExpenses - cashPurchases
     const actualCash = closingRow?.actual_cash_counted ?? null
     const variance = actualCash === null ? null : round2(actualCash - expectedCash)
     const bankDepositAmount = closingRow?.bank_deposit_amount ?? null
@@ -114,6 +116,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       cashCreditCollected,
       purchaseRows,
       totalPurchases,
+      cashPurchases,
       expenseEntries,
       totalExpenses,
       openingCarry,
@@ -249,6 +252,8 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     doc.text(`+ Cash Collected from Old Credit Today: ${formatMoney(data.cashCreditCollected)}`, 14, y)
     y += 5
     doc.text(`- Daily Expenses: ${formatMoney(data.totalExpenses)}`, 14, y)
+    y += 5
+    doc.text(`- Cash Purchases Today: ${formatMoney(data.cashPurchases)}`, 14, y)
     y += 6
     doc.setFontSize(11)
     doc.text(`= Total Cash in Hand (Expected): ${formatMoney(data.expectedCash)}`, 14, y)
@@ -492,6 +497,10 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
             <tr>
               <td>− Daily Expenses</td>
               <td>{formatMoney(data.totalExpenses)}</td>
+            </tr>
+            <tr>
+              <td>− Cash Purchases Today</td>
+              <td>{formatMoney(data.cashPurchases)}</td>
             </tr>
             <tr style={{ fontWeight: 700 }}>
               <td>= Total Cash in Hand (Expected)</td>
