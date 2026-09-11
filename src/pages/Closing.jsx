@@ -17,6 +17,7 @@ export default function Closing() {
   const [bankSales, setBankSales] = useState(0)
   const [creditSales, setCreditSales] = useState(0)
   const [cashPurchases, setCashPurchases] = useState(0)
+  const [cashSupplierPayments, setCashSupplierPayments] = useState(0)
   const [pettyCashSpent, setPettyCashSpent] = useState(0)
   const [cashCreditCollected, setCashCreditCollected] = useState(0)
   const [actualCounted, setActualCounted] = useState('')
@@ -36,26 +37,36 @@ export default function Closing() {
     setLoading(true)
     setError('')
 
-    const [salesRes, purchasesRes, pettyRes, closingRes, outstandingRes, payableRes, creditPaymentsRes, prevClosingRes] =
-      await Promise.all([
-        supabase.from('sale_invoices').select('total, payment_type').eq('date', date),
-        supabase.from('purchase_invoices').select('total, payment_type').eq('date', date),
-        supabase
-          .from('expenses')
-          .select('amount')
-          .eq('date', date)
-          .eq('entry_type', 'expense')
-          .eq('scope', 'daily'),
-        supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
-        supabase.from('v_customer_outstanding').select('outstanding'),
-        supabase.from('v_supplier_outstanding').select('outstanding'),
-        supabase.from('customer_payments').select('amount, payment_type').eq('date', date),
-        supabase
-          .from('daily_closing')
-          .select('actual_cash_counted, bank_deposit_amount')
-          .eq('date', addDays(date, -1))
-          .maybeSingle(),
-      ])
+    const [
+      salesRes,
+      purchasesRes,
+      pettyRes,
+      closingRes,
+      outstandingRes,
+      payableRes,
+      creditPaymentsRes,
+      supplierPaymentsRes,
+      prevClosingRes,
+    ] = await Promise.all([
+      supabase.from('sale_invoices').select('total, payment_type').eq('date', date),
+      supabase.from('purchase_invoices').select('total, payment_type').eq('date', date),
+      supabase
+        .from('expenses')
+        .select('amount')
+        .eq('date', date)
+        .eq('entry_type', 'expense')
+        .eq('scope', 'daily'),
+      supabase.from('daily_closing').select('*').eq('date', date).maybeSingle(),
+      supabase.from('v_customer_outstanding').select('outstanding'),
+      supabase.from('v_supplier_outstanding').select('outstanding'),
+      supabase.from('customer_payments').select('amount, payment_type').eq('date', date),
+      supabase.from('supplier_payments').select('amount, payment_type').eq('date', date),
+      supabase
+        .from('daily_closing')
+        .select('actual_cash_counted, bank_deposit_amount')
+        .eq('date', addDays(date, -1))
+        .maybeSingle(),
+    ])
 
     const sales = salesRes.data ?? []
     setCashSales(sales.filter((s) => s.payment_type === 'Cash').reduce((sum, s) => sum + s.total, 0))
@@ -64,6 +75,9 @@ export default function Closing() {
 
     const purchases = purchasesRes.data ?? []
     setCashPurchases(purchases.filter((p) => p.payment_type === 'Cash').reduce((sum, p) => sum + p.total, 0))
+    setCashSupplierPayments(
+      (supplierPaymentsRes.data ?? []).filter((p) => p.payment_type === 'Cash').reduce((sum, p) => sum + p.amount, 0)
+    )
 
     setPettyCashSpent((pettyRes.data ?? []).reduce((sum, p) => sum + p.amount, 0))
     setCashCreditCollected(
@@ -99,9 +113,12 @@ export default function Closing() {
   // hadn't yet deposited to the bank (its bank deposit variance) -- that
   // cash is still physically in hand, so it opens today's till instead of
   // vanishing between days. Any purchase paid in cash today comes straight
-  // out of the till too, same as a daily expense.
+  // out of the till too, same as a daily expense -- whether it was a Cash
+  // purchase invoice, or a Credit purchase invoice settled today with a
+  // cash supplier payment.
   const cashSalesNum = cashSales
-  const expectedCash = openingCarry + cashSalesNum + cashCreditCollected - pettyCashSpent - cashPurchases
+  const expectedCash =
+    openingCarry + cashSalesNum + cashCreditCollected - pettyCashSpent - cashPurchases - cashSupplierPayments
   const variance = actualCounted === '' ? null : Number(actualCounted) - expectedCash
   const bankDepositVariance =
     actualCounted === '' || bankDepositAmount === '' ? null : Number(actualCounted) - Number(bankDepositAmount)
@@ -189,6 +206,10 @@ export default function Closing() {
               <tr>
                 <td>− Cash Purchases Today</td>
                 <td>{formatMoney(cashPurchases)}</td>
+              </tr>
+              <tr>
+                <td>− Cash Paid to Suppliers (Credit Settled) Today</td>
+                <td>{formatMoney(cashSupplierPayments)}</td>
               </tr>
               <tr style={{ fontWeight: 700 }}>
                 <td>= Expected Cash in Hand</td>

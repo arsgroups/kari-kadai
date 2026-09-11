@@ -19,6 +19,7 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       { data: sales },
       { data: creditPayments },
       { data: purchases },
+      { data: supplierPayments },
       { data: expenseRows },
       { data: closingRow },
       { data: prevClosingRow },
@@ -32,6 +33,10 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
         .select('amount, payment_type, note, customers(name), sale_invoices(invoice_number, date)')
         .eq('date', date),
       supabase.from('purchase_invoices').select('invoice_number, total, payment_type, suppliers(name)').eq('date', date),
+      supabase
+        .from('supplier_payments')
+        .select('amount, payment_type, note, suppliers(name), purchase_invoices(invoice_number, date)')
+        .eq('date', date),
       supabase
         .from('expenses')
         .select('description, amount, entry_type, expense_categories(name)')
@@ -84,6 +89,18 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     const totalPurchases = purchaseRows.reduce((sum, p) => sum + p.total, 0)
     const cashPurchases = purchaseRows.filter((p) => p.payment_type === 'Cash').reduce((sum, p) => sum + p.total, 0)
 
+    // A Credit purchase invoice settled later with a cash supplier payment
+    // comes out of the till on the day it's PAID, not the day the invoice
+    // was raised -- same convention as cashCreditCollected on the sales side.
+    const supplierPaymentRows = (supplierPayments ?? []).map((p) => ({
+      ...p,
+      supplierName: p.suppliers?.name ?? '—',
+      invoiceNumber: p.purchase_invoices?.invoice_number ?? '—',
+    }))
+    const cashSupplierPayments = supplierPaymentRows
+      .filter((p) => p.payment_type === 'Cash')
+      .reduce((sum, p) => sum + p.amount, 0)
+
     const expenseEntries = (expenseRows ?? []).filter((e) => e.entry_type === 'expense')
     const totalExpenses = expenseEntries.reduce((sum, e) => sum + e.amount, 0)
 
@@ -98,7 +115,8 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       prevClosingRow?.actual_cash_counted != null && prevClosingRow?.bank_deposit_amount != null
         ? round2(prevClosingRow.actual_cash_counted - prevClosingRow.bank_deposit_amount)
         : 0
-    const expectedCash = openingCarry + cashSales + cashCreditCollected - totalExpenses - cashPurchases
+    const expectedCash =
+      openingCarry + cashSales + cashCreditCollected - totalExpenses - cashPurchases - cashSupplierPayments
     const actualCash = closingRow?.actual_cash_counted ?? null
     const variance = actualCash === null ? null : round2(actualCash - expectedCash)
     const bankDepositAmount = closingRow?.bank_deposit_amount ?? null
@@ -117,6 +135,8 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
       purchaseRows,
       totalPurchases,
       cashPurchases,
+      supplierPaymentRows,
+      cashSupplierPayments,
       expenseEntries,
       totalExpenses,
       openingCarry,
@@ -254,6 +274,8 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
     doc.text(`- Daily Expenses: ${formatMoney(data.totalExpenses)}`, 14, y)
     y += 5
     doc.text(`- Cash Purchases Today: ${formatMoney(data.cashPurchases)}`, 14, y)
+    y += 5
+    doc.text(`- Cash Paid to Suppliers (Credit Settled) Today: ${formatMoney(data.cashSupplierPayments)}`, 14, y)
     y += 6
     doc.setFontSize(11)
     doc.text(`= Total Cash in Hand (Expected): ${formatMoney(data.expectedCash)}`, 14, y)
@@ -501,6 +523,10 @@ export default function DailyClosingReport({ date, operatorEmail, onClose }) {
             <tr>
               <td>− Cash Purchases Today</td>
               <td>{formatMoney(data.cashPurchases)}</td>
+            </tr>
+            <tr>
+              <td>− Cash Paid to Suppliers (Credit Settled) Today</td>
+              <td>{formatMoney(data.cashSupplierPayments)}</td>
             </tr>
             <tr style={{ fontWeight: 700 }}>
               <td>= Total Cash in Hand (Expected)</td>
