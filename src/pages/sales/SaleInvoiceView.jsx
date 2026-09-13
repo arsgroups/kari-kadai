@@ -62,6 +62,10 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   const [paymentMethodDraft, setPaymentMethodDraft] = useState('Cash')
   const [savingPaymentMethod, setSavingPaymentMethod] = useState(false)
   const [paymentMethodError, setPaymentMethodError] = useState('')
+  const [editingDate, setEditingDate] = useState(false)
+  const [dateDraft, setDateDraft] = useState('')
+  const [savingDate, setSavingDate] = useState(false)
+  const [dateError, setDateError] = useState('')
 
   useEffect(() => {
     load()
@@ -459,6 +463,45 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     load()
   }
 
+  // Corrects an invoice logged under the wrong day -- e.g. entered just after
+  // midnight for a sale that actually happened the day before. Stock
+  // movements for this invoice's items are keyed off the invoice date at the
+  // time they were created (trg_sale_item_stock_movement), so they're moved
+  // along with it -- otherwise stock-as-of-date snapshots (Month End Report)
+  // would disagree with where the sale itself now shows up.
+  function startEditDate() {
+    setDateDraft(invoice.date)
+    setDateError('')
+    setEditingDate(true)
+  }
+
+  async function handleSaveDate() {
+    setSavingDate(true)
+    setDateError('')
+    const { error } = await supabase.from('sale_invoices').update({ date: dateDraft }).eq('id', invoiceId)
+    if (error) {
+      setSavingDate(false)
+      setDateError(error.message)
+      return
+    }
+    const itemIds = items.map((it) => it.id)
+    if (itemIds.length) {
+      const { error: stockError } = await supabase
+        .from('stock_movements')
+        .update({ date: dateDraft })
+        .eq('reference_type', 'sale')
+        .in('reference_id', itemIds)
+      if (stockError) {
+        setSavingDate(false)
+        setDateError(`Date saved, but stock movement dates failed to update: ${stockError.message}`)
+        return
+      }
+    }
+    setSavingDate(false)
+    setEditingDate(false)
+    load()
+  }
+
   async function handleDelete() {
     if (!window.confirm(`Delete invoice ${invoice.invoice_number}? This will restore the stock it deducted and cannot be undone.`))
       return
@@ -636,7 +679,31 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
           <div style={{ textAlign: 'right' }}>
             <h1 style={{ margin: 0 }}>INVOICE</h1>
             <p style={{ margin: '0.2rem 0' }}>Invoice No: <strong>{invoice.invoice_number}</strong></p>
-            <p style={{ margin: '0.2rem 0' }}>Date: {formatDate(invoice.date)}</p>
+            <p style={{ margin: '0.2rem 0' }}>
+              Date: {formatDate(invoice.date)}
+              {!editingDate && (
+                <button
+                  type="button"
+                  className="btn-secondary no-print"
+                  style={{ marginLeft: '0.5rem', padding: '0.1rem 0.5rem', fontSize: '0.75rem' }}
+                  onClick={startEditDate}
+                >
+                  Edit
+                </button>
+              )}
+            </p>
+            {editingDate && (
+              <div className="no-print" style={{ margin: '0.3rem 0', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <input type="date" value={dateDraft} onChange={(e) => setDateDraft(e.target.value)} />
+                <button type="button" className="btn-secondary" disabled={savingDate} onClick={handleSaveDate}>
+                  {savingDate ? 'Saving…' : 'Save'}
+                </button>
+                <button type="button" className="btn-secondary" disabled={savingDate} onClick={() => setEditingDate(false)}>
+                  Cancel
+                </button>
+              </div>
+            )}
+            {dateError && <div className="inline-error no-print">{dateError}</div>}
             <p style={{ margin: '0.2rem 0' }}>
               Payment: {invoice.payment_type}
               {invoice.payment_type !== 'Credit' && !editingPaymentMethod && (
