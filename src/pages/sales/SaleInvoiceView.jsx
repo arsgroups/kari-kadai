@@ -56,6 +56,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   const [editProducts, setEditProducts] = useState([]) // channel-visible products, for the Add Line picker
   const [newLineProduct, setNewLineProduct] = useState('')
   const [stockMeta, setStockMeta] = useState({}) // product_id -> { unit, factor, parentId, parentUnit }
+  const [customerPrices, setCustomerPrices] = useState({}) // product_id -> customer-specific price
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState('')
   const [editingPaymentMethod, setEditingPaymentMethod] = useState(false)
@@ -233,7 +234,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
       }))
     )
     setNewLineProduct('')
-    const [{ data: productData }, { data: channelData }, { data: yieldItems }] = await Promise.all([
+    const [{ data: productData }, { data: channelData }, { data: yieldItems }, { data: customerPriceRows }] = await Promise.all([
       supabase
         .from('products')
         .select(
@@ -247,7 +248,15 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         .select('child_product_id, is_active, yield_configurations!inner(parent_product_id, is_active)')
         .eq('is_active', true)
         .eq('yield_configurations.is_active', true),
+      invoice.customer_id
+        ? supabase.from('customer_item_prices').select('product_id, price').eq('customer_id', invoice.customer_id)
+        : Promise.resolve({ data: [] }),
     ])
+    const customerPriceMap = {}
+    ;(customerPriceRows ?? []).forEach((row) => {
+      customerPriceMap[row.product_id] = row.price
+    })
+    setCustomerPrices(customerPriceMap)
     const channelMap = {}
     ;(channelData ?? []).forEach((row) => {
       if (!channelMap[row.product_id]) channelMap[row.product_id] = {}
@@ -305,6 +314,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   function addEditLine() {
     const product = editProducts.find((p) => p.id === newLineProduct)
     if (!product) return
+    const customPrice = customerPrices[product.id]
     const channelPrice = invoice.channel === 'Restaurant' ? product.restaurant_price : product.counter_price
     setEditLines((prev) => [
       ...prev,
@@ -315,7 +325,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         display_name: product.channelName,
         unit: product.sales_unit,
         quantity: 1,
-        rate: channelPrice ?? product.default_selling_price ?? 0,
+        rate: customPrice ?? channelPrice ?? product.default_selling_price ?? 0,
         discount: 0,
       },
     ])
