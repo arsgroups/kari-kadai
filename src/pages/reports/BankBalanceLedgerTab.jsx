@@ -53,6 +53,7 @@ export default function BankBalanceLedgerTab() {
       { data: purchaseRows },
       { data: supplierPaymentRows },
       { data: expenseRows },
+      { data: partnerPayoutRows },
     ] = await Promise.all([
       supabase
         .from('sale_invoices')
@@ -72,6 +73,7 @@ export default function BankBalanceLedgerTab() {
         .from('expenses')
         .select('date, description, amount, expense_categories(name)')
         .eq('entry_type', 'expense'),
+      supabase.from('partner_payouts').select('date, amount, payment_type, note, partners(name)'),
     ])
 
     const entries = [
@@ -114,6 +116,14 @@ export default function BankBalanceLedgerTab() {
         particulars: e.description || e.expense_categories?.name || 'Expense',
         debit: 0,
         credit: e.amount,
+      })),
+      ...(partnerPayoutRows ?? []).map((p) => ({
+        date: p.date,
+        type: 'Partner Payout',
+        reference: p.payment_type,
+        particulars: p.note || `Payout to ${p.partners?.name ?? '—'}`,
+        debit: 0,
+        credit: p.amount,
       })),
     ]
       .filter((e) => e.date >= OPENING_BALANCE_DATE)
@@ -158,9 +168,9 @@ export default function BankBalanceLedgerTab() {
       <div className="card">
         <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
           Combined cash + bank position of the business — cash &amp; bank sales, customer payments received,
-          purchases &amp; supplier payments, and expenses (Cash and Bank alike). Transfers between till and
-          bank (deposits, petty-cash top-ups) are internal and net to zero, so they aren't listed separately.
-          Capital contributions/withdrawals are not included (see Reports → Capital). The ledger starts from a
+          purchases &amp; supplier payments, expenses, and partner payouts (Cash and Bank alike). Transfers
+          between till and bank (deposits, petty-cash top-ups) are internal and net to zero, so they aren't
+          listed separately. Capital contributions/withdrawals are not included (see Reports → Capital). The ledger starts from a
           confirmed opening balance of {formatMoney(OPENING_BALANCE_AMOUNT)} as of {formatDate(OPENING_BALANCE_DATE)};
           data before that date isn't reliable and is left out entirely.
         </p>
