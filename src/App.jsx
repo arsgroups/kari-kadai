@@ -22,6 +22,7 @@ const Promotions = lazy(() => import('./pages/Promotions'))
 const AuditLog = lazy(() => import('./pages/AuditLog'))
 const Quotations = lazy(() => import('./pages/Quotations'))
 const Capital = lazy(() => import('./pages/Capital'))
+const PartnersPayout = lazy(() => import('./pages/PartnersPayout'))
 const WebsiteOrders = lazy(() => import('./pages/WebsiteOrders'))
 
 function RouteFallback() {
@@ -68,6 +69,14 @@ export default function App() {
                 element={
                   <AdminRoute>
                     <Capital />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="partners-payout"
+                element={
+                  <AdminRoute>
+                    <PartnersPayout />
                   </AdminRoute>
                 }
               />

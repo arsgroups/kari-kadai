@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { to: '/expenses/monthly', label: 'Monthly Expenses', adminOnly: true },
   { to: '/closing', label: 'Daily Closing' },
   { to: '/capital', label: 'Capital', adminOnly: true },
+  { to: '/partners-payout', label: 'Partners Payout', adminOnly: true },
   { to: '/reports', label: 'Reports', adminOnly: true },
   { to: '/settings', label: 'Settings', adminOnly: true },
   { to: '/audit-log', label: 'Audit Log', adminOnly: true },

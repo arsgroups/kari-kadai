@@ -556,6 +556,33 @@ create table if not exists partner_salary_settings (
   updated_at timestamptz not null default now()
 );
 
+-- Partners Payout module: a real partner list + profit-share % (drives the
+-- Partner Share table in Profit Report), and a log of actual payouts made
+-- against each partner's computed share of a given month's Final Net Profit.
+create table if not exists partners (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  share_percent numeric not null check (share_percent >= 0 and share_percent <= 100),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+-- period is the 'YYYY-MM' month this payout is being made against -- nullable
+-- for a payout that isn't tied to one specific month.
+create table if not exists partner_payouts (
+  id uuid primary key default gen_random_uuid(),
+  partner_id uuid not null references partners(id) on delete cascade,
+  date date not null default current_date,
+  amount numeric not null check (amount > 0),
+  payment_type text not null check (payment_type in ('Cash','Bank')),
+  period text,
+  note text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_partner_payouts_partner on partner_payouts(partner_id);
+create index if not exists idx_partner_payouts_period on partner_payouts(period);
+
 create table if not exists gst_returns (
   id uuid primary key default gen_random_uuid(),
   period_start date not null,
@@ -855,7 +882,7 @@ begin
       'gst_returns','customer_item_prices',
       'yield_configurations','yield_configuration_items','product_channel_config','promotions','promotion_products',
       'quotations','quotation_items','capital_transactions','capital_transaction_items','partner_fee_rate_history',
-      'partner_salary_settings'
+      'partner_salary_settings','partners','partner_payouts'
     ])
   loop
     execute format('alter table %I enable row level security', t);

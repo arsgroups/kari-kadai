@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { supabase } from '../../lib/supabaseClient'
 import { fetchMonthEndRawData } from '../../lib/monthEndReportData'
 import { computeMonthEndReport } from '../../lib/monthEndReport'
 import { formatMoney } from '../../lib/format'
@@ -7,14 +8,6 @@ import { COMPANY } from '../../lib/companyInfo'
 import ReportPrintHeader from '../../components/ReportPrintHeader'
 
 const BRAND = [122, 31, 31]
-
-// How Profit is split between partners. Percentages must add up to 100 --
-// change here to adjust the split (or add/remove partners).
-const PARTNER_SHARES = [
-  { label: 'Partner 1', pct: 50 },
-  { label: 'Partner 2', pct: 25 },
-  { label: 'Partner 3', pct: 25 },
-]
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -37,19 +30,22 @@ function defaultReportMonth() {
 // Starts from the same Profit & Loss Statement as Reports -> Month End
 // Report (GP) -- Revenue, COGS, Gross Profit, Daily Expenses, Managing
 // Partner Salary, Gross Profit Margin -- then continues past it: Monthly
-// Expenses, down to a true Net Profit, split 50/50 between the two
-// partners. "Monthly Expenses" here deliberately includes Fixed Asset /
-// Capex spend too (unlike Month End Report (GP), which keeps them
-// separate) -- Net Profit is recomputed locally as Gross Profit Margin
-// minus that combined total, rather than reusing current.profitAfterFee/
-// finalNetProfit (which follow the GP report's Fixed-Asset-excluded
-// definition and would otherwise disagree with what's shown here).
+// Expenses, down to a true Net Profit, split between partners per the
+// percentages configured in the Partners Payout module (which also lets
+// actual payouts against that share be logged). "Monthly
+// Expenses" here deliberately includes Fixed Asset / Capex spend too
+// (unlike Month End Report (GP), which keeps them separate) -- Net Profit
+// is recomputed locally as Gross Profit Margin minus that combined total,
+// rather than reusing current.profitAfterFee/finalNetProfit (which follow
+// the GP report's Fixed-Asset-excluded definition and would otherwise
+// disagree with what's shown here).
 export default function NetProfitReportTab() {
   const [year, setYear] = useState(defaultReportMonth().year)
   const [month, setMonth] = useState(defaultReportMonth().month)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [report, setReport] = useState(null)
+  const [partners, setPartners] = useState([])
   const [pdfError, setPdfError] = useState('')
   const [downloadingPdf, setDownloadingPdf] = useState(false)
 
@@ -57,8 +53,12 @@ export default function NetProfitReportTab() {
     setLoading(true)
     setError('')
     try {
-      const raw = await fetchMonthEndRawData({ year, month })
+      const [raw, { data: partnerRows }] = await Promise.all([
+        fetchMonthEndRawData({ year, month }),
+        supabase.from('partners').select('id, name, share_percent').eq('is_active', true).order('share_percent', { ascending: false }),
+      ])
       setReport(computeMonthEndReport(raw))
+      setPartners(partnerRows ?? [])
     } catch (e) {
       setError(e.message)
       setReport(null)
@@ -231,7 +231,9 @@ export default function NetProfitReportTab() {
         startY: y,
         margin: { left: marginX, right: marginX },
         head: [['Partner', 'Share %', 'Amount']],
-        body: PARTNER_SHARES.map((p) => [p.label, `${p.pct}%`, formatMoney(round2(netProfit * (p.pct / 100)))]),
+        body: partners.length
+          ? partners.map((p) => [p.name, `${p.share_percent}%`, formatMoney(round2(netProfit * (p.share_percent / 100)))])
+          : [['No partners configured — see Partners Payout', '', '']],
         styles: { fontSize: 10 },
         headStyles: { fillColor: BRAND },
         columnStyles: { 2: { halign: 'right', cellWidth: AMOUNT_W } },
@@ -400,13 +402,18 @@ export default function NetProfitReportTab() {
               </tr>
             </thead>
             <tbody>
-              {PARTNER_SHARES.map((p) => (
-                <tr key={p.label}>
-                  <td>{p.label}</td>
-                  <td>{p.pct}%</td>
-                  <td>{netProfit != null ? formatMoney(round2(netProfit * (p.pct / 100))) : ''}</td>
+              {partners.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.name}</td>
+                  <td>{p.share_percent}%</td>
+                  <td>{netProfit != null ? formatMoney(round2(netProfit * (p.share_percent / 100))) : ''}</td>
                 </tr>
               ))}
+              {partners.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="muted">No partners configured — see Partners Payout.</td>
+                </tr>
+              )}
             </tbody>
           </table>
 
