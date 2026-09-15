@@ -1,50 +1,65 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { formatDate, formatMoney, toISODate } from '../../lib/format'
+import { formatMoney, toISODate } from '../../lib/format'
 import { round2 } from '../../lib/gst'
 import ExportButtons from '../../components/ExportButtons'
 import ReportPrintHeader from '../../components/ReportPrintHeader'
 
-function firstOfMonth() {
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+function currentMonthKey() {
   const d = new Date()
-  return toISODate(new Date(d.getFullYear(), d.getMonth(), 1))
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthLabel(monthKey) {
+  const [y, m] = monthKey.split('-').map(Number)
+  return `${MONTH_NAMES[m - 1]} ${y}`
 }
 
 // Same anchor as Reports -> Bank Balance Ledger -- both reports track the
 // same underlying combined cash+bank position, just at different levels of
 // detail, so they must start from the same confirmed figure to ever
 // reconcile with each other.
-const OPENING_BALANCE_DATE = '2026-08-01'
+const OPENING_MONTH = '2026-08'
 const OPENING_BALANCE_AMOUNT = 10000
 
-// Category display order within a single day -- money in, then money out.
+// Category display order within a single month -- money in, then money out.
 const CATEGORY_ORDER = ['Sales', 'Customer Payments', 'Purchases', 'Supplier Payments', 'Daily Expenses', 'Monthly Expenses', 'Partner Payouts']
+const OUTFLOW_CATEGORIES = ['Purchases', 'Supplier Payments', 'Daily Expenses', 'Monthly Expenses', 'Partner Payouts']
 
-function sumByDate(rows, amountFn) {
+function sumByMonth(rows, amountFn) {
   const totals = {}
   rows.forEach((r) => {
-    totals[r.date] = round2((totals[r.date] ?? 0) + amountFn(r))
+    const key = r.date.slice(0, 7)
+    totals[key] = round2((totals[key] ?? 0) + amountFn(r))
   })
   return totals
 }
 
 // Same combined cash+bank scope as Bank Balance Ledger (Capital excluded for
 // the same reason -- no reliable cash-vs-non-cash split there), but instead
-// of one row per individual transaction, each day gets at most one row per
-// category -- the day's total Sales, total Purchases, total Daily Expenses,
-// etc. -- so a month of activity reads as a handful of lines instead of
-// hundreds. The two reports' closing balance for the same date always
-// agrees; this one is just a coarser view of the same numbers.
+// of one row per individual transaction, each MONTH gets at most one row per
+// category -- that month's total Sales, total Purchases, total Daily
+// Expenses, etc. -- so a year of activity reads as a handful of lines. The
+// two reports' closing balance for the same cut-off date always agrees;
+// this one is just a coarser view of the same numbers.
 //
 // Outstanding Receivable is a different kind of figure entirely -- not a
-// cash movement, but a snapshot of unpaid customer invoices (Credit sales,
-// or any invoice with a partial payment) as of today. It's money the
-// business has already recognized as a sale but that hasn't reached the
-// bank yet, which is exactly why this ledger's closing balance won't match
-// total sales activity.
+// cash movement, but a snapshot of what customers still owe right now. It
+// reuses v_customer_outstanding (the same view Customers -> Outstanding is
+// built on): per customer, sum of invoice balances minus all payments ever
+// received from them. A raw sum of sale_invoices.balance alone would double
+// count -- that column only reflects what was paid AT the time the invoice
+// was raised and is never updated when a later customer_payments row
+// settles it, so an invoice paid off in full afterwards would still show as
+// outstanding.
 export default function CashCreditFlowTab() {
-  const [from, setFrom] = useState(firstOfMonth())
-  const [to, setTo] = useState(toISODate())
+  const [fromMonth, setFromMonth] = useState(OPENING_MONTH)
+  const [toMonth, setToMonth] = useState(currentMonthKey())
   const [allEntries, setAllEntries] = useState([])
   const [outstandingReceivable, setOutstandingReceivable] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -70,42 +85,42 @@ export default function CashCreditFlowTab() {
       supabase.from('supplier_payments').select('date, amount'),
       supabase.from('expenses').select('date, scope, amount').eq('entry_type', 'expense'),
       supabase.from('partner_payouts').select('date, amount'),
-      supabase.from('sale_invoices').select('balance').gt('balance', 0),
+      supabase.from('v_customer_outstanding').select('outstanding').gt('outstanding', 0),
     ])
 
-    setOutstandingReceivable(round2((outstandingRows ?? []).reduce((s, r) => s + Number(r.balance), 0)))
+    setOutstandingReceivable(round2((outstandingRows ?? []).reduce((s, r) => s + Number(r.outstanding), 0)))
 
     const dailyExpenseRows = (expenseRows ?? []).filter((e) => e.scope === 'daily')
     const monthlyExpenseRows = (expenseRows ?? []).filter((e) => e.scope !== 'daily')
 
     const byCategory = {
-      Sales: sumByDate(salesRows ?? [], (r) => r.total),
-      'Customer Payments': sumByDate(customerPaymentRows ?? [], (r) => r.amount),
-      Purchases: sumByDate(purchaseRows ?? [], (r) => r.total),
-      'Supplier Payments': sumByDate(supplierPaymentRows ?? [], (r) => r.amount),
-      'Daily Expenses': sumByDate(dailyExpenseRows, (r) => r.amount),
-      'Monthly Expenses': sumByDate(monthlyExpenseRows, (r) => r.amount),
-      'Partner Payouts': sumByDate(partnerPayoutRows ?? [], (r) => r.amount),
+      Sales: sumByMonth(salesRows ?? [], (r) => r.total),
+      'Customer Payments': sumByMonth(customerPaymentRows ?? [], (r) => r.amount),
+      Purchases: sumByMonth(purchaseRows ?? [], (r) => r.total),
+      'Supplier Payments': sumByMonth(supplierPaymentRows ?? [], (r) => r.amount),
+      'Daily Expenses': sumByMonth(dailyExpenseRows, (r) => r.amount),
+      'Monthly Expenses': sumByMonth(monthlyExpenseRows, (r) => r.amount),
+      'Partner Payouts': sumByMonth(partnerPayoutRows ?? [], (r) => r.amount),
     }
-    const isOutflow = (category) => ['Purchases', 'Supplier Payments', 'Daily Expenses', 'Monthly Expenses', 'Partner Payouts'].includes(category)
 
     const entries = []
     CATEGORY_ORDER.forEach((category) => {
-      Object.entries(byCategory[category]).forEach(([date, amount]) => {
+      Object.entries(byCategory[category]).forEach(([month, amount]) => {
         if (!amount) return
+        const isOutflow = OUTFLOW_CATEGORIES.includes(category)
         entries.push({
-          date,
+          month,
           type: category,
-          particulars: `${category} — ${formatDate(date)} (consolidated)`,
-          debit: isOutflow(category) ? 0 : amount,
-          credit: isOutflow(category) ? amount : 0,
+          particulars: `${category} — ${monthLabel(month)} (consolidated)`,
+          debit: isOutflow ? 0 : amount,
+          credit: isOutflow ? amount : 0,
         })
       })
     })
 
     const sorted = entries
-      .filter((e) => e.date >= OPENING_BALANCE_DATE)
-      .sort((a, b) => a.date.localeCompare(b.date) || CATEGORY_ORDER.indexOf(a.type) - CATEGORY_ORDER.indexOf(b.type))
+      .filter((e) => e.month >= OPENING_MONTH)
+      .sort((a, b) => a.month.localeCompare(b.month) || CATEGORY_ORDER.indexOf(a.type) - CATEGORY_ORDER.indexOf(b.type))
 
     let running = OPENING_BALANCE_AMOUNT
     const withBalance = sorted.map((e) => {
@@ -118,19 +133,19 @@ export default function CashCreditFlowTab() {
   }
 
   const { openingBalance, rows, closingBalance, totalReceipts, totalPayments } = useMemo(() => {
-    const before = allEntries.filter((e) => e.date < from)
-    const inRange = allEntries.filter((e) => e.date >= from && e.date <= to)
+    const before = allEntries.filter((e) => e.month < fromMonth)
+    const inRange = allEntries.filter((e) => e.month >= fromMonth && e.month <= toMonth)
     const opening = before.length ? before[before.length - 1].balance : OPENING_BALANCE_AMOUNT
     const closing = inRange.length ? inRange[inRange.length - 1].balance : opening
     const receipts = round2(inRange.reduce((sum, e) => sum + (e.debit || 0), 0))
     const payments = round2(inRange.reduce((sum, e) => sum + (e.credit || 0), 0))
     return { openingBalance: opening, rows: inRange, closingBalance: closing, totalReceipts: receipts, totalPayments: payments }
-  }, [allEntries, from, to])
+  }, [allEntries, fromMonth, toMonth])
 
   const exportRows = [
-    { date: formatDate(from), type: '', particulars: 'Opening Balance', debit: null, credit: null, balance: openingBalance },
+    { month: monthLabel(fromMonth), type: '', particulars: 'Opening Balance', debit: null, credit: null, balance: openingBalance },
     ...rows.map((r) => ({
-      date: formatDate(r.date),
+      month: monthLabel(r.month),
       type: r.type,
       particulars: r.particulars,
       debit: r.debit || null,
@@ -145,19 +160,19 @@ export default function CashCreditFlowTab() {
       <div className="card">
         <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
           Same combined cash + bank position as Bank Balance Ledger, consolidated to one line per category per
-          day instead of one line per transaction — Sales (Cash &amp; Bank), Customer Payments received,
+          month instead of one line per transaction — Sales (Cash &amp; Bank), Customer Payments received,
           Purchases, Supplier Payments, Daily Expenses, Monthly Expenses, and Partner Payouts. Capital is
           excluded for the same reason as Bank Balance Ledger, and the ledger starts from the same confirmed
-          opening balance of {formatMoney(OPENING_BALANCE_AMOUNT)} as of {formatDate(OPENING_BALANCE_DATE)}.
+          opening balance of {formatMoney(OPENING_BALANCE_AMOUNT)} as of {monthLabel(OPENING_MONTH)}.
         </p>
         <div className="form-grid">
           <label>
-            From
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            From Month
+            <input type="month" value={fromMonth} onChange={(e) => setFromMonth(e.target.value)} />
           </label>
           <label>
-            To
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            To Month
+            <input type="month" value={toMonth} onChange={(e) => setToMonth(e.target.value)} />
           </label>
         </div>
       </div>
@@ -193,14 +208,11 @@ export default function CashCreditFlowTab() {
             </div>
             <div>
               <div className="muted" style={{ fontSize: '0.8rem' }}>
-                Outstanding Receivable (as of today)
+                Outstanding
               </div>
               <strong style={{ fontSize: '1.1rem', color: outstandingReceivable > 0 ? 'var(--warning)' : undefined }}>
                 {formatMoney(outstandingReceivable)}
               </strong>
-              <div className="muted" style={{ fontSize: '0.75rem', maxWidth: 220 }}>
-                Uncollected Credit sales — not yet at the bank, still pending to receive.
-              </div>
             </div>
           </div>
 
@@ -209,7 +221,7 @@ export default function CashCreditFlowTab() {
               title="Cash Credit Flow"
               filename="cash_credit_flow"
               columns={[
-                { key: 'date', label: 'Date' },
+                { key: 'month', label: 'Month' },
                 { key: 'type', label: 'Category' },
                 { key: 'particulars', label: 'Particulars' },
                 { key: 'debit', label: 'Receipts (Dr)', money: true },
@@ -224,7 +236,7 @@ export default function CashCreditFlowTab() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th>Month</th>
                   <th>Category</th>
                   <th>Particulars</th>
                   <th>Receipts (Dr)</th>
@@ -234,7 +246,7 @@ export default function CashCreditFlowTab() {
               </thead>
               <tbody>
                 <tr style={{ fontWeight: 700 }}>
-                  <td>{formatDate(from)}</td>
+                  <td>{monthLabel(fromMonth)}</td>
                   <td></td>
                   <td>Opening Balance</td>
                   <td>—</td>
@@ -243,7 +255,7 @@ export default function CashCreditFlowTab() {
                 </tr>
                 {rows.map((r, i) => (
                   <tr key={i}>
-                    <td>{formatDate(r.date)}</td>
+                    <td>{monthLabel(r.month)}</td>
                     <td>
                       <span className={r.debit ? 'tag tag-success' : 'tag tag-warning'}>{r.type}</span>
                     </td>
