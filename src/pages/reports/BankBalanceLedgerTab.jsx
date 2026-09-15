@@ -15,8 +15,13 @@ function firstOfMonth() {
 // the bank account. Moving money between the two (a bank deposit of cash, a
 // petty-cash top-up) is an internal transfer that nets to zero here, so
 // those aren't listed as separate entries -- only money crossing the
-// boundary of the business (in from a customer/partner, out to a
-// supplier/expense/partner) counts.
+// boundary of the business (from a customer, to a supplier/expense) counts.
+//
+// Capital contributions/withdrawals are deliberately excluded: the Capital
+// module has no way to tell a real cash/bank movement apart from a non-cash
+// entry (equipment, opening stock value, etc. logged as capital), so
+// including it here risks overstating the balance. See Reports -> Capital
+// for that separate ledger.
 //
 // There is no stored "opening balance" anywhere in the system, so this
 // report computes one by replaying every transaction from the very first
@@ -36,14 +41,12 @@ export default function BankBalanceLedgerTab() {
   async function load() {
     setLoading(true)
     const [
-      { data: capitalRows },
       { data: salesRows },
       { data: customerPaymentRows },
       { data: purchaseRows },
       { data: supplierPaymentRows },
       { data: expenseRows },
     ] = await Promise.all([
-      supabase.from('capital_transactions').select('date, partner_name, transaction_type, amount, description'),
       supabase
         .from('sale_invoices')
         .select('date, invoice_number, total, channel, customers(name)')
@@ -65,14 +68,6 @@ export default function BankBalanceLedgerTab() {
     ])
 
     const entries = [
-      ...(capitalRows ?? []).map((c) => ({
-        date: c.date,
-        type: 'Capital',
-        reference: c.partner_name,
-        particulars: c.description || (c.transaction_type === 'contribution' ? 'Capital contribution' : 'Capital withdrawal'),
-        debit: c.transaction_type === 'contribution' ? c.amount : 0,
-        credit: c.transaction_type === 'withdrawal' ? c.amount : 0,
-      })),
       ...(salesRows ?? []).map((s) => ({
         date: s.date,
         type: 'Sale',
@@ -153,10 +148,11 @@ export default function BankBalanceLedgerTab() {
       <ReportPrintHeader title="Bank Balance Ledger" />
       <div className="card">
         <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
-          Combined cash + bank position of the business — capital in/out, cash &amp; bank sales, customer
-          payments received, purchases &amp; supplier payments, and expenses (Cash and Bank alike). Transfers
-          between till and bank (deposits, petty-cash top-ups) are internal and net to zero, so they aren't
-          listed separately. Running balance is computed from the very first recorded transaction.
+          Combined cash + bank position of the business — cash &amp; bank sales, customer payments received,
+          purchases &amp; supplier payments, and expenses (Cash and Bank alike). Transfers between till and
+          bank (deposits, petty-cash top-ups) are internal and net to zero, so they aren't listed separately.
+          Capital contributions/withdrawals are not included (see Reports → Capital). Running balance is
+          computed from the very first recorded transaction.
         </p>
         <div className="form-grid">
           <label>
