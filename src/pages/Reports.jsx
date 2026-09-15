@@ -4,6 +4,7 @@ import PnLTab from './reports/PnLTab'
 import DrilldownTab from './reports/DrilldownTab'
 import CustomerLedgerTab from './reports/CustomerLedgerTab'
 import SupplierLedgerTab from './reports/SupplierLedgerTab'
+import BankBalanceLedgerTab from './reports/BankBalanceLedgerTab'
 import InventoryValuationTab from './reports/InventoryValuationTab'
 import ItemMarginTab from './reports/ItemMarginTab'
 import ChannelMarginTab from './reports/ChannelMarginTab'
@@ -27,6 +28,7 @@ export default function Reports() {
           { key: 'drilldown', label: 'Drill-down Builder', content: <DrilldownTab /> },
           { key: 'customer-ledger', label: 'Customer Ledger', content: <CustomerLedgerTab /> },
           { key: 'supplier-ledger', label: 'Supplier Ledger', content: <SupplierLedgerTab /> },
+          { key: 'bank-balance', label: 'Bank Balance Ledger', content: <BankBalanceLedgerTab /> },
           { key: 'valuation', label: 'Inventory Valuation', content: <InventoryValuationTab /> },
         ]}
       />
