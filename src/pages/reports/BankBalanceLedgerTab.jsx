@@ -10,6 +10,14 @@ function firstOfMonth() {
   return toISODate(new Date(d.getFullYear(), d.getMonth(), 1))
 }
 
+// Data before August 2026 (including July, when the system was still being
+// set up) isn't reliable, so it's left out entirely. Instead the ledger
+// starts from a known, manually confirmed figure: $10,000 cash+bank on hand
+// as of 1 Aug 2026. That figure already accounts for everything before it,
+// so pre-Aug-2026 transactions are excluded rather than replayed.
+const OPENING_BALANCE_DATE = '2026-08-01'
+const OPENING_BALANCE_AMOUNT = 10000
+
 // Combined cash + bank position of the business -- every dollar actually
 // received or paid out, regardless of whether it moved through the till or
 // the bank account. Moving money between the two (a bank deposit of cash, a
@@ -23,10 +31,9 @@ function firstOfMonth() {
 // including it here risks overstating the balance. See Reports -> Capital
 // for that separate ledger.
 //
-// There is no stored "opening balance" anywhere in the system, so this
-// report computes one by replaying every transaction from the very first
-// record. That means it always fetches full history, then slices the
-// [from, to] window for display -- the "Opening Balance" shown is simply the
+// The running balance starts at OPENING_BALANCE_AMOUNT on OPENING_BALANCE_DATE
+// (see above) rather than replaying all history, then the [from, to] window
+// is sliced out for display -- the "Opening Balance" shown is simply the
 // running balance immediately before `from`.
 export default function BankBalanceLedgerTab() {
   const [from, setFrom] = useState(firstOfMonth())
@@ -108,9 +115,11 @@ export default function BankBalanceLedgerTab() {
         debit: 0,
         credit: e.amount,
       })),
-    ].sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type))
+    ]
+      .filter((e) => e.date >= OPENING_BALANCE_DATE)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type))
 
-    let running = 0
+    let running = OPENING_BALANCE_AMOUNT
     const withBalance = entries.map((e) => {
       running = round2(running + (e.debit || 0) - (e.credit || 0))
       return { ...e, balance: running }
@@ -123,7 +132,7 @@ export default function BankBalanceLedgerTab() {
   const { openingBalance, rows, closingBalance, totalReceipts, totalPayments } = useMemo(() => {
     const before = allEntries.filter((e) => e.date < from)
     const inRange = allEntries.filter((e) => e.date >= from && e.date <= to)
-    const opening = before.length ? before[before.length - 1].balance : 0
+    const opening = before.length ? before[before.length - 1].balance : OPENING_BALANCE_AMOUNT
     const closing = inRange.length ? inRange[inRange.length - 1].balance : opening
     const receipts = round2(inRange.reduce((sum, e) => sum + (e.debit || 0), 0))
     const payments = round2(inRange.reduce((sum, e) => sum + (e.credit || 0), 0))
@@ -151,8 +160,9 @@ export default function BankBalanceLedgerTab() {
           Combined cash + bank position of the business — cash &amp; bank sales, customer payments received,
           purchases &amp; supplier payments, and expenses (Cash and Bank alike). Transfers between till and
           bank (deposits, petty-cash top-ups) are internal and net to zero, so they aren't listed separately.
-          Capital contributions/withdrawals are not included (see Reports → Capital). Running balance is
-          computed from the very first recorded transaction.
+          Capital contributions/withdrawals are not included (see Reports → Capital). The ledger starts from a
+          confirmed opening balance of {formatMoney(OPENING_BALANCE_AMOUNT)} as of {formatDate(OPENING_BALANCE_DATE)};
+          data before that date isn't reliable and is left out entirely.
         </p>
         <div className="form-grid">
           <label>
