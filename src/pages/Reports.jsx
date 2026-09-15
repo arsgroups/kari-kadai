@@ -5,6 +5,7 @@ import DrilldownTab from './reports/DrilldownTab'
 import CustomerLedgerTab from './reports/CustomerLedgerTab'
 import SupplierLedgerTab from './reports/SupplierLedgerTab'
 import BankBalanceLedgerTab from './reports/BankBalanceLedgerTab'
+import CashCreditFlowTab from './reports/CashCreditFlowTab'
 import InventoryValuationTab from './reports/InventoryValuationTab'
 import ItemMarginTab from './reports/ItemMarginTab'
 import ChannelMarginTab from './reports/ChannelMarginTab'
@@ -29,6 +30,7 @@ export default function Reports() {
           { key: 'customer-ledger', label: 'Customer Ledger', content: <CustomerLedgerTab /> },
           { key: 'supplier-ledger', label: 'Supplier Ledger', content: <SupplierLedgerTab /> },
           { key: 'bank-balance', label: 'Bank Balance Ledger', content: <BankBalanceLedgerTab /> },
+          { key: 'cash-credit-flow', label: 'Cash Credit Flow', content: <CashCreditFlowTab /> },
           { key: 'valuation', label: 'Inventory Valuation', content: <InventoryValuationTab /> },
         ]}
       />
