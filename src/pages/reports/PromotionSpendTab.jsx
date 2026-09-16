@@ -30,7 +30,7 @@ export default function PromotionSpendTab() {
     const [{ data: rawRows }, { data: yieldItems }] = await Promise.all([
       supabase
         .from('sale_invoice_items')
-        .select('id, product_id, quantity, unit_cost, products(name), sale_invoices!inner(date, channel)')
+        .select('id, product_id, quantity, unit_cost, products(name), sale_invoices!inner(date, channel, invoice_number)')
         .eq('rate', 0)
         .gt('quantity', 0)
         .gte('sale_invoices.date', from)
@@ -80,8 +80,9 @@ export default function PromotionSpendTab() {
       const name = it.products?.name ?? 'Unknown'
       const channel = it.sale_invoices?.channel ?? 'Unknown'
       const key = `${name}__${channel}`
-      if (!byGroup[key]) byGroup[key] = { name, channel, quantity: 0, cost: 0, hasCost: false }
+      if (!byGroup[key]) byGroup[key] = { name, channel, quantity: 0, cost: 0, hasCost: false, invoiceNumbers: new Set() }
       byGroup[key].quantity += it.quantity
+      if (it.sale_invoices?.invoice_number) byGroup[key].invoiceNumbers.add(it.sale_invoices.invoice_number)
 
       const parentId = parentIdByChild[it.product_id]
       const unitCost = parentId != null ? parentCostById[parentId] : it.unit_cost
@@ -92,7 +93,12 @@ export default function PromotionSpendTab() {
     })
 
     const list = Object.values(byGroup)
-      .map((r) => ({ ...r, quantity: round2(r.quantity), cost: round2(r.cost) }))
+      .map((r) => ({
+        ...r,
+        quantity: round2(r.quantity),
+        cost: round2(r.cost),
+        invoiceNumbers: [...r.invoiceNumbers].sort().join(', '),
+      }))
       .sort((a, b) => b.cost - a.cost)
 
     setRows(list)
@@ -105,6 +111,7 @@ export default function PromotionSpendTab() {
     channel: r.channel,
     quantity: r.quantity,
     cost: r.hasCost ? r.cost : '',
+    invoiceNumbers: r.invoiceNumbers,
   }))
 
   return (
@@ -144,6 +151,7 @@ export default function PromotionSpendTab() {
             { key: 'channel', label: 'Channel' },
             { key: 'quantity', label: 'Qty Given Free' },
             { key: 'cost', label: 'Cost (Promo Spend)', money: true },
+            { key: 'invoiceNumbers', label: 'Invoice Numbers' },
           ]}
           rows={exportRows}
         />
@@ -160,6 +168,7 @@ export default function PromotionSpendTab() {
                 <th>Channel</th>
                 <th>Qty Given Free</th>
                 <th>Cost (Promo Spend)</th>
+                <th>Invoice Numbers</th>
               </tr>
             </thead>
             <tbody>
@@ -169,11 +178,12 @@ export default function PromotionSpendTab() {
                   <td>{r.channel}</td>
                   <td>{r.quantity}</td>
                   <td>{r.hasCost ? formatMoney(r.cost) : '—'}</td>
+                  <td style={{ maxWidth: 320 }}>{r.invoiceNumbers}</td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="muted">
+                  <td colSpan={5} className="muted">
                     No promotional giveaways in this range.
                   </td>
                 </tr>
