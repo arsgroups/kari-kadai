@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
-import { formatMoney, toISODate } from '../../lib/format'
+import { formatMoney } from '../../lib/format'
 import { round2 } from '../../lib/gst'
 import ExportButtons from '../../components/ExportButtons'
 import ReportPrintHeader from '../../components/ReportPrintHeader'
@@ -27,9 +27,24 @@ function monthLabel(monthKey) {
 const OPENING_MONTH = '2026-08'
 const OPENING_BALANCE_AMOUNT = 10000
 
-// Category display order within a single month -- money in, then money out.
+// Display order for the waterfall statement AND the monthly detail table --
+// money in, then money out. Customer Payments (old credit collected) and
+// Supplier Payments (credit purchases settled) aren't things the user asked
+// for by name, but leaving them out would make "how much should be in bank"
+// wrong the moment any credit sale is collected or credit purchase is paid
+// off -- so they're kept as their own clearly-labeled lines rather than
+// silently folded into Sales/Purchases or dropped.
 const CATEGORY_ORDER = ['Sales', 'Customer Payments', 'Purchases', 'Supplier Payments', 'Daily Expenses', 'Monthly Expenses', 'Partner Payouts']
 const OUTFLOW_CATEGORIES = ['Purchases', 'Supplier Payments', 'Daily Expenses', 'Monthly Expenses', 'Partner Payouts']
+const CATEGORY_LABELS = {
+  Sales: 'Actual Sales (Cash & Bank)',
+  'Customer Payments': 'Customer Payments Received (old credit collected)',
+  Purchases: 'Actual Purchases (Cash & Bank)',
+  'Supplier Payments': 'Supplier Payments (credit purchases settled)',
+  'Daily Expenses': 'Daily Expenses',
+  'Monthly Expenses': 'Monthly Expenses',
+  'Partner Payouts': 'Partner Payouts',
+}
 
 function sumByMonth(rows, amountFn) {
   const totals = {}
@@ -40,23 +55,25 @@ function sumByMonth(rows, amountFn) {
   return totals
 }
 
-// Same combined cash+bank scope as Bank Balance Ledger (Capital excluded for
-// the same reason -- no reliable cash-vs-non-cash split there), but instead
-// of one row per individual transaction, each MONTH gets at most one row per
-// category -- that month's total Sales, total Purchases, total Daily
-// Expenses, etc. -- so a year of activity reads as a handful of lines. The
-// two reports' closing balance for the same cut-off date always agrees;
-// this one is just a coarser view of the same numbers.
+// A plain-language answer to "how much should be in the bank?" for
+// shareholders, not a transaction-level ledger: Opening Balance, one clearly
+// labeled line per category (money in, then money out), and the resulting
+// Expected Bank Balance. Same combined cash+bank scope as Bank Balance
+// Ledger (Capital excluded for the same reason -- no reliable cash-vs-
+// non-cash split there there), so the two reports' balance for the same
+// cut-off always agrees. A monthly detail table underneath lets anyone
+// trace the statement's numbers back to individual months if needed.
 //
-// Outstanding Receivable is a different kind of figure entirely -- not a
-// cash movement, but a snapshot of what customers still owe right now. It
-// reuses v_customer_outstanding (the same view Customers -> Outstanding is
-// built on): per customer, sum of invoice balances minus all payments ever
-// received from them. A raw sum of sale_invoices.balance alone would double
-// count -- that column only reflects what was paid AT the time the invoice
-// was raised and is never updated when a later customer_payments row
-// settles it, so an invoice paid off in full afterwards would still show as
-// outstanding.
+// Outstanding is a different kind of figure entirely -- not a cash
+// movement, but a snapshot of what customers still owe right now, shown
+// separately and explicitly NOT part of the Expected Bank Balance math
+// (that money hasn't reached the bank). It reuses v_customer_outstanding,
+// the same view Customers -> Outstanding is built on: per customer, sum of
+// invoice balances minus all payments ever received from them. A raw sum of
+// sale_invoices.balance alone would be wrong -- that column only reflects
+// what was paid AT the time the invoice was raised and is never updated
+// when a later customer_payments row settles it, so an invoice paid off in
+// full afterwards would still show as outstanding.
 export default function CashCreditFlowTab() {
   const [fromMonth, setFromMonth] = useState(OPENING_MONTH)
   const [toMonth, setToMonth] = useState(currentMonthKey())
@@ -111,7 +128,6 @@ export default function CashCreditFlowTab() {
         entries.push({
           month,
           type: category,
-          particulars: `${category} — ${monthLabel(month)} (consolidated)`,
           debit: isOutflow ? 0 : amount,
           credit: isOutflow ? amount : 0,
         })
@@ -132,38 +148,48 @@ export default function CashCreditFlowTab() {
     setLoading(false)
   }
 
-  const { openingBalance, rows, closingBalance, totalReceipts, totalPayments } = useMemo(() => {
+  const { openingBalance, rows, closingBalance, categoryTotals } = useMemo(() => {
     const before = allEntries.filter((e) => e.month < fromMonth)
     const inRange = allEntries.filter((e) => e.month >= fromMonth && e.month <= toMonth)
     const opening = before.length ? before[before.length - 1].balance : OPENING_BALANCE_AMOUNT
     const closing = inRange.length ? inRange[inRange.length - 1].balance : opening
-    const receipts = round2(inRange.reduce((sum, e) => sum + (e.debit || 0), 0))
-    const payments = round2(inRange.reduce((sum, e) => sum + (e.credit || 0), 0))
-    return { openingBalance: opening, rows: inRange, closingBalance: closing, totalReceipts: receipts, totalPayments: payments }
+    const totals = {}
+    CATEGORY_ORDER.forEach((category) => {
+      totals[category] = round2(
+        inRange.filter((e) => e.type === category).reduce((sum, e) => sum + (e.debit || 0) + (e.credit || 0), 0)
+      )
+    })
+    return { openingBalance: opening, rows: inRange, closingBalance: closing, categoryTotals: totals }
   }, [allEntries, fromMonth, toMonth])
 
   const exportRows = [
-    { month: monthLabel(fromMonth), type: '', particulars: 'Opening Balance', debit: null, credit: null, balance: openingBalance },
-    ...rows.map((r) => ({
-      month: monthLabel(r.month),
-      type: r.type,
-      particulars: r.particulars,
-      debit: r.debit || null,
-      credit: r.credit || null,
-      balance: r.balance,
+    { line: 'Opening Balance', amount: openingBalance },
+    ...CATEGORY_ORDER.map((category) => ({
+      line: CATEGORY_LABELS[category],
+      amount: OUTFLOW_CATEGORIES.includes(category) ? -categoryTotals[category] : categoryTotals[category],
     })),
+    { line: 'Expected Bank Balance', amount: closingBalance },
+    { line: 'Outstanding (not yet at the bank)', amount: outstandingReceivable },
   ]
+
+  const monthlyExportRows = rows.map((r) => ({
+    month: monthLabel(r.month),
+    category: CATEGORY_LABELS[r.type],
+    debit: r.debit || null,
+    credit: r.credit || null,
+    balance: r.balance,
+  }))
 
   return (
     <div>
       <ReportPrintHeader title="Cash Credit Flow" />
       <div className="card">
         <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
-          Same combined cash + bank position as Bank Balance Ledger, consolidated to one line per category per
-          month instead of one line per transaction — Sales (Cash &amp; Bank), Customer Payments received,
-          Purchases, Supplier Payments, Daily Expenses, Monthly Expenses, and Partner Payouts. Capital is
-          excluded for the same reason as Bank Balance Ledger, and the ledger starts from the same confirmed
-          opening balance of {formatMoney(OPENING_BALANCE_AMOUNT)} as of {monthLabel(OPENING_MONTH)}.
+          A plain-language answer to "how much should be in the bank?" — Opening Balance, actual money in
+          (Sales, Customer Payments) and out (Purchases, Supplier Payments, Expenses, Partner Payouts) for the
+          selected months, and the resulting Expected Bank Balance. Same combined cash + bank scope as Bank
+          Balance Ledger (Capital excluded for the same reason), starting from the same confirmed opening
+          balance of {formatMoney(OPENING_BALANCE_AMOUNT)} as of {monthLabel(OPENING_MONTH)}.
         </p>
         <div className="form-grid">
           <label>
@@ -181,85 +207,94 @@ export default function CashCreditFlowTab() {
         <p className="muted">Loading…</p>
       ) : (
         <>
-          <div className="card" style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
-            <div>
-              <div className="muted" style={{ fontSize: '0.8rem' }}>
-                Opening Balance
-              </div>
-              <strong style={{ fontSize: '1.1rem' }}>{formatMoney(openingBalance)}</strong>
+          <div className="card">
+            <div className="toolbar" style={{ justifyContent: 'space-between' }}>
+              <h3 style={{ margin: 0 }}>
+                Statement: {monthLabel(fromMonth)} – {monthLabel(toMonth)}
+              </h3>
+              <ExportButtons
+                title="Cash Credit Flow — Statement"
+                filename="cash_credit_flow_statement"
+                columns={[
+                  { key: 'line', label: 'Line' },
+                  { key: 'amount', label: 'Amount', money: true },
+                ]}
+                rows={exportRows}
+              />
             </div>
-            <div>
-              <div className="muted" style={{ fontSize: '0.8rem' }}>
-                Total Receipts
-              </div>
-              <strong style={{ fontSize: '1.1rem' }}>{formatMoney(totalReceipts)}</strong>
-            </div>
-            <div>
-              <div className="muted" style={{ fontSize: '0.8rem' }}>
-                Total Payments
-              </div>
-              <strong style={{ fontSize: '1.1rem' }}>{formatMoney(totalPayments)}</strong>
-            </div>
-            <div>
-              <div className="muted" style={{ fontSize: '0.8rem' }}>
-                Closing Balance
-              </div>
-              <strong style={{ fontSize: '1.1rem' }}>{formatMoney(closingBalance)}</strong>
-            </div>
-            <div>
-              <div className="muted" style={{ fontSize: '0.8rem' }}>
-                Outstanding
-              </div>
-              <strong style={{ fontSize: '1.1rem', color: outstandingReceivable > 0 ? 'var(--warning)' : undefined }}>
-                {formatMoney(outstandingReceivable)}
-              </strong>
-            </div>
-          </div>
-
-          <div className="toolbar">
-            <ExportButtons
-              title="Cash Credit Flow"
-              filename="cash_credit_flow"
-              columns={[
-                { key: 'month', label: 'Month' },
-                { key: 'type', label: 'Category' },
-                { key: 'particulars', label: 'Particulars' },
-                { key: 'debit', label: 'Receipts (Dr)', money: true },
-                { key: 'credit', label: 'Payments (Cr)', money: true },
-                { key: 'balance', label: 'Balance', money: true },
-              ]}
-              rows={exportRows}
-            />
+            <table className="data-table" style={{ maxWidth: 560 }}>
+              <tbody>
+                <tr>
+                  <td>Opening Balance ({monthLabel(fromMonth)})</td>
+                  <td>{formatMoney(openingBalance)}</td>
+                </tr>
+                {CATEGORY_ORDER.map((category) => {
+                  const isOutflow = OUTFLOW_CATEGORIES.includes(category)
+                  const amount = categoryTotals[category]
+                  return (
+                    <tr key={category}>
+                      <td>
+                        {isOutflow ? '−' : '+'} {CATEGORY_LABELS[category]}
+                      </td>
+                      <td>{formatMoney(amount)}</td>
+                    </tr>
+                  )
+                })}
+                <tr style={{ fontWeight: 700, fontSize: '1.05rem' }}>
+                  <td>= Expected Bank Balance ({monthLabel(toMonth)})</td>
+                  <td>{formatMoney(closingBalance)}</td>
+                </tr>
+                <tr>
+                  <td colSpan={2}>&nbsp;</td>
+                </tr>
+                <tr>
+                  <td>
+                    Outstanding — owed by customers, not yet received
+                    <div className="muted" style={{ fontSize: '0.75rem' }}>
+                      Informational only — this money is still outside, not part of the balance above.
+                    </div>
+                  </td>
+                  <td style={{ color: outstandingReceivable > 0 ? 'var(--warning)' : undefined, fontWeight: 700 }}>
+                    {formatMoney(outstandingReceivable)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           <div className="card">
+            <div className="toolbar" style={{ justifyContent: 'space-between' }}>
+              <h3 style={{ margin: 0 }}>Monthly Detail</h3>
+              <ExportButtons
+                title="Cash Credit Flow — Monthly Detail"
+                filename="cash_credit_flow_monthly"
+                columns={[
+                  { key: 'month', label: 'Month' },
+                  { key: 'category', label: 'Category' },
+                  { key: 'debit', label: 'Money In', money: true },
+                  { key: 'credit', label: 'Money Out', money: true },
+                  { key: 'balance', label: 'Balance', money: true },
+                ]}
+                rows={monthlyExportRows}
+              />
+            </div>
             <table className="data-table">
               <thead>
                 <tr>
                   <th>Month</th>
                   <th>Category</th>
-                  <th>Particulars</th>
-                  <th>Receipts (Dr)</th>
-                  <th>Payments (Cr)</th>
+                  <th>Money In</th>
+                  <th>Money Out</th>
                   <th>Balance</th>
                 </tr>
               </thead>
               <tbody>
-                <tr style={{ fontWeight: 700 }}>
-                  <td>{monthLabel(fromMonth)}</td>
-                  <td></td>
-                  <td>Opening Balance</td>
-                  <td>—</td>
-                  <td>—</td>
-                  <td>{formatMoney(openingBalance)}</td>
-                </tr>
                 {rows.map((r, i) => (
                   <tr key={i}>
                     <td>{monthLabel(r.month)}</td>
                     <td>
-                      <span className={r.debit ? 'tag tag-success' : 'tag tag-warning'}>{r.type}</span>
+                      <span className={r.debit ? 'tag tag-success' : 'tag tag-warning'}>{CATEGORY_LABELS[r.type]}</span>
                     </td>
-                    <td>{r.particulars}</td>
                     <td>{r.debit ? formatMoney(r.debit) : '—'}</td>
                     <td>{r.credit ? formatMoney(r.credit) : '—'}</td>
                     <td>{formatMoney(r.balance)}</td>
@@ -267,20 +302,12 @@ export default function CashCreditFlowTab() {
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="muted">
+                    <td colSpan={5} className="muted">
                       No activity in this range.
                     </td>
                   </tr>
                 )}
               </tbody>
-              <tfoot>
-                <tr style={{ fontWeight: 700 }}>
-                  <td colSpan={3}>Closing Balance</td>
-                  <td>{formatMoney(totalReceipts)}</td>
-                  <td>{formatMoney(totalPayments)}</td>
-                  <td>{formatMoney(closingBalance)}</td>
-                </tr>
-              </tfoot>
             </table>
           </div>
         </>
