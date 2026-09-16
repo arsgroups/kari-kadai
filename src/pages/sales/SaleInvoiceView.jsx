@@ -349,6 +349,19 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
       setEditError('Quantity must be greater than 0 for every line.')
       return
     }
+
+    // A $0 line is usually a deliberate giveaway, but it's also exactly
+    // what a forgotten price entry looks like -- flag it rather than
+    // silently accepting it, same as when the invoice is first created.
+    const zeroRateLines = editLines.filter((l) => (Number(l.rate) || 0) === 0)
+    if (zeroRateLines.length > 0) {
+      const names = zeroRateLines.map((l) => l.display_name || 'this item')
+      const proceed = window.confirm(
+        `${names.join(', ')} ${zeroRateLines.length === 1 ? 'is' : 'are'} priced at $0. Continue anyway?`
+      )
+      if (!proceed) return
+    }
+
     setEditSaving(true)
 
     const keptItemIds = new Set(editLines.filter((l) => l.itemId).map((l) => l.itemId))

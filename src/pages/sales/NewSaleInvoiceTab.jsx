@@ -367,6 +367,18 @@ export default function NewSaleInvoiceTab() {
       return
     }
 
+    // A $0 line is usually a deliberate Buy-X-Get-Y-Free giveaway (see
+    // Reports -> Promotion Spend), but it's also exactly what a forgotten
+    // price entry looks like -- flag it rather than silently accepting it.
+    const zeroRateLines = validLines.filter((l) => (Number(l.rate) || 0) === 0)
+    if (zeroRateLines.length > 0) {
+      const names = zeroRateLines.map((l) => channelProducts.find((p) => p.id === l.product_id)?.channelName || 'this item')
+      const proceed = window.confirm(
+        `${names.join(', ')} ${zeroRateLines.length === 1 ? 'is' : 'are'} priced at $0. Continue anyway?`
+      )
+      if (!proceed) return
+    }
+
     setSaving(true)
 
     const { data: invoice, error: invoiceError } = await supabase
