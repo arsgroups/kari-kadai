@@ -2,25 +2,12 @@ import { supabase } from './supabaseClient'
 import { round2 } from './gst'
 import { toISODate } from './format'
 import { monthRanges } from './monthEndReport'
+import { fetchAllRows } from './fetchAllRows'
 
 function dayBefore(isoDate) {
   const d = new Date(isoDate + 'T00:00:00')
   d.setDate(d.getDate() - 1)
   return toISODate(d)
-}
-
-async function fetchAllRows(query) {
-  const pageSize = 1000
-  let from = 0
-  let all = []
-  for (;;) {
-    const { data, error } = await query.range(from, from + pageSize - 1)
-    if (error) throw error
-    all = all.concat(data ?? [])
-    if (!data || data.length < pageSize) break
-    from += pageSize
-  }
-  return all
 }
 
 async function fetchStockValueAsOf(asOfDate, products) {

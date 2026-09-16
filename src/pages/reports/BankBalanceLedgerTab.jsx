@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
 import { round2 } from '../../lib/gst'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import ExportButtons from '../../components/ExportButtons'
 import ReportPrintHeader from '../../components/ReportPrintHeader'
 
@@ -40,6 +41,7 @@ export default function BankBalanceLedgerTab() {
   const [to, setTo] = useState(toISODate())
   const [allEntries, setAllEntries] = useState([]) // full history, sorted, each carrying its running balance
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     load()
@@ -47,33 +49,29 @@ export default function BankBalanceLedgerTab() {
 
   async function load() {
     setLoading(true)
-    const [
-      { data: salesRows },
-      { data: customerPaymentRows },
-      { data: purchaseRows },
-      { data: supplierPaymentRows },
-      { data: expenseRows },
-      { data: partnerPayoutRows },
-    ] = await Promise.all([
-      supabase
-        .from('sale_invoices')
-        .select('date, invoice_number, total, channel, customers(name)')
-        .in('payment_type', ['Cash', 'Bank']),
-      supabase
-        .from('customer_payments')
-        .select('date, amount, payment_type, note, customers(name), sale_invoices(invoice_number)'),
-      supabase
-        .from('purchase_invoices')
-        .select('date, invoice_number, total, suppliers(name)')
-        .in('payment_type', ['Cash', 'Bank']),
-      supabase
-        .from('supplier_payments')
-        .select('date, amount, payment_type, note, suppliers(name), purchase_invoices(invoice_number)'),
-      supabase
-        .from('expenses')
-        .select('date, description, amount, expense_categories(name)')
-        .eq('entry_type', 'expense'),
-      supabase.from('partner_payouts').select('date, amount, payment_type, note, partners(name)'),
+    setError('')
+    try {
+    const [salesRows, customerPaymentRows, purchaseRows, supplierPaymentRows, expenseRows, partnerPayoutRows] = await Promise.all([
+      fetchAllRows(
+        supabase
+          .from('sale_invoices')
+          .select('date, invoice_number, total, channel, customers(name)')
+          .in('payment_type', ['Cash', 'Bank'])
+      ),
+      fetchAllRows(
+        supabase.from('customer_payments').select('date, amount, payment_type, note, customers(name), sale_invoices(invoice_number)')
+      ),
+      fetchAllRows(
+        supabase
+          .from('purchase_invoices')
+          .select('date, invoice_number, total, suppliers(name)')
+          .in('payment_type', ['Cash', 'Bank'])
+      ),
+      fetchAllRows(
+        supabase.from('supplier_payments').select('date, amount, payment_type, note, suppliers(name), purchase_invoices(invoice_number)')
+      ),
+      fetchAllRows(supabase.from('expenses').select('date, description, amount, expense_categories(name)').eq('entry_type', 'expense')),
+      fetchAllRows(supabase.from('partner_payouts').select('date, amount, payment_type, note, partners(name)')),
     ])
 
     const entries = [
@@ -136,6 +134,9 @@ export default function BankBalanceLedgerTab() {
     })
 
     setAllEntries(withBalance)
+    } catch (e) {
+      setError(e.message || 'Failed to load report data.')
+    }
     setLoading(false)
   }
 
@@ -186,6 +187,7 @@ export default function BankBalanceLedgerTab() {
         </div>
       </div>
 
+      {error && <div className="inline-error">{error}</div>}
       {loading ? (
         <p className="muted">Loading…</p>
       ) : (
