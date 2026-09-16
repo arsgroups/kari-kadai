@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
+import { useAuth } from '../../contexts/AuthContext'
 
 const emptyForm = { date: toISODate(), customer_id: '', amount: '', payment_type: 'Cash', note: '' }
 
 export default function CustomerPaymentsTab() {
+  const { isAdmin } = useAuth()
   const [customers, setCustomers] = useState([])
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -15,6 +17,7 @@ export default function CustomerPaymentsTab() {
   const [editTypeDraft, setEditTypeDraft] = useState('Cash')
   const [editDateDraft, setEditDateDraft] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)
 
   async function load() {
     setLoading(true)
@@ -83,6 +86,31 @@ export default function CustomerPaymentsTab() {
       return
     }
     setEditingId(null)
+    load()
+  }
+
+  // Reverses a payment logged by mistake (e.g. recorded against an invoice
+  // that was never actually paid) -- deleting the row is enough to restore
+  // the credit, since an invoice's outstanding balance is always computed
+  // live as balance minus whatever customer_payments still reference it,
+  // never a separately stored figure that needs its own correction.
+  async function handleDelete(payment) {
+    if (
+      !window.confirm(
+        `Delete this ${formatMoney(payment.amount)} payment from ${payment.customers?.name ?? 'this customer'} on ${formatDate(
+          payment.date
+        )}? This cannot be undone -- the invoice it was against will show as outstanding again.`
+      )
+    )
+      return
+    setDeletingId(payment.id)
+    setError('')
+    const { error } = await supabase.from('customer_payments').delete().eq('id', payment.id)
+    setDeletingId(null)
+    if (error) {
+      setError(error.message)
+      return
+    }
     load()
   }
 
@@ -184,9 +212,16 @@ export default function CustomerPaymentsTab() {
                         </button>
                       </>
                     ) : (
-                      <button className="btn-secondary" onClick={() => startEdit(p)}>
-                        Edit
-                      </button>
+                      <>
+                        <button className="btn-secondary" onClick={() => startEdit(p)}>
+                          Edit
+                        </button>{' '}
+                        {isAdmin && (
+                          <button className="btn-danger" disabled={deletingId === p.id} onClick={() => handleDelete(p)}>
+                            {deletingId === p.id ? 'Deleting…' : 'Delete'}
+                          </button>
+                        )}
+                      </>
                     )}
                   </td>
                 </tr>
