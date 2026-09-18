@@ -228,8 +228,11 @@ export default function CashCreditFlowTab() {
         { label: 'Actual Sales (every invoice raised, Cash + Bank + Credit)', amount: statement.actualSales, isOutflow: false },
         { label: 'Outstanding (of those invoices, still unpaid)', amount: statement.outstanding, isOutflow: true },
         { label: CATEGORY_LABELS['Customer Payments'], amount: statement.oldCreditCollected, isOutflow: false },
-        { label: CATEGORY_LABELS['Purchases'], amount: categoryTotals['Purchases'], isOutflow: true },
-        { label: CATEGORY_LABELS['Supplier Payments'], amount: categoryTotals['Supplier Payments'], isOutflow: true },
+        {
+          label: 'Purchases & Payments to Supplier',
+          amount: round2(categoryTotals['Purchases'] + categoryTotals['Supplier Payments']),
+          isOutflow: true,
+        },
         { label: CATEGORY_LABELS['Daily Expenses'], amount: categoryTotals['Daily Expenses'], isOutflow: true },
         { label: CATEGORY_LABELS['Monthly Expenses'], amount: categoryTotals['Monthly Expenses'], isOutflow: true },
         { label: CATEGORY_LABELS['Partner Payouts'], amount: categoryTotals['Partner Payouts'], isOutflow: true },
