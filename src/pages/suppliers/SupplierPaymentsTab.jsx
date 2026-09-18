@@ -1,16 +1,22 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
+import { useAuth } from '../../contexts/AuthContext'
 
 const emptyForm = { date: toISODate(), supplier_id: '', amount: '', payment_type: 'Cash', note: '' }
 
 export default function SupplierPaymentsTab() {
+  const { isAdmin } = useAuth()
   const [suppliers, setSuppliers] = useState([])
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState(emptyForm)
+  const [editingId, setEditingId] = useState(null)
+  const [editTypeDraft, setEditTypeDraft] = useState('Cash')
+  const [editDateDraft, setEditDateDraft] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -50,6 +56,35 @@ export default function SupplierPaymentsTab() {
       return
     }
     setForm({ ...emptyForm, date: form.date })
+    load()
+  }
+
+  // Corrects a Cash/Bank mix-up (or the date) on an already-recorded
+  // payment -- e.g. Cash was picked by mistake when the supplier was
+  // actually paid by bank transfer. Feeds straight into anything that
+  // reads payment_type/date downstream (Daily Closing, Bank Balance
+  // Ledger, Cash Credit Flow), so fixing it here also fixes those. Admin
+  // only, since it rewrites a submitted payment record.
+  function startEdit(payment) {
+    setEditingId(payment.id)
+    setEditTypeDraft(payment.payment_type)
+    setEditDateDraft(payment.date)
+    setError('')
+  }
+
+  async function handleSaveEdit(paymentId) {
+    setSavingEdit(true)
+    setError('')
+    const { error } = await supabase
+      .from('supplier_payments')
+      .update({ payment_type: editTypeDraft, date: editDateDraft })
+      .eq('id', paymentId)
+    setSavingEdit(false)
+    if (error) {
+      setError(error.message)
+      return
+    }
+    setEditingId(null)
     load()
   }
 
@@ -114,21 +149,55 @@ export default function SupplierPaymentsTab() {
                 <th>Amount</th>
                 <th>Type</th>
                 <th>Note</th>
+                {isAdmin && <th></th>}
               </tr>
             </thead>
             <tbody>
               {payments.map((p) => (
                 <tr key={p.id}>
-                  <td>{formatDate(p.date)}</td>
+                  <td>
+                    {editingId === p.id ? (
+                      <input type="date" value={editDateDraft} onChange={(e) => setEditDateDraft(e.target.value)} />
+                    ) : (
+                      formatDate(p.date)
+                    )}
+                  </td>
                   <td>{p.suppliers?.name}</td>
                   <td>{formatMoney(p.amount)}</td>
-                  <td>{p.payment_type}</td>
+                  <td>
+                    {editingId === p.id ? (
+                      <select value={editTypeDraft} onChange={(e) => setEditTypeDraft(e.target.value)}>
+                        <option>Cash</option>
+                        <option>Bank</option>
+                      </select>
+                    ) : (
+                      p.payment_type
+                    )}
+                  </td>
                   <td>{p.note}</td>
+                  {isAdmin && (
+                    <td>
+                      {editingId === p.id ? (
+                        <>
+                          <button className="btn-secondary" disabled={savingEdit} onClick={() => handleSaveEdit(p.id)}>
+                            {savingEdit ? 'Saving…' : 'Save'}
+                          </button>{' '}
+                          <button className="btn-secondary" disabled={savingEdit} onClick={() => setEditingId(null)}>
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button className="btn-secondary" onClick={() => startEdit(p)}>
+                          Edit
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
               {payments.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted">
+                  <td colSpan={isAdmin ? 6 : 5} className="muted">
                     No payments recorded yet.
                   </td>
                 </tr>
