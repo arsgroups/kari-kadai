@@ -59,6 +59,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   const [customerPrices, setCustomerPrices] = useState({}) // product_id -> customer-specific price
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState('')
+  const [editSurchargeApplicable, setEditSurchargeApplicable] = useState(true)
   const [editingPaymentMethod, setEditingPaymentMethod] = useState(false)
   const [paymentMethodDraft, setPaymentMethodDraft] = useState('Cash')
   const [savingPaymentMethod, setSavingPaymentMethod] = useState(false)
@@ -221,6 +222,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
   async function startEdit() {
     setEditError('')
+    setEditSurchargeApplicable(invoice.surcharge_applicable)
     setEditLines(
       items.map((it) => ({
         key: it.id,
@@ -443,7 +445,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
     const newSubtotal = round2(editLines.reduce((sum, l) => sum + editLineAmount(l), 0))
     let newGstAmount = 0
-    if (invoice.channel === 'Restaurant' && invoice.surcharge_applicable) {
+    if (invoice.channel === 'Restaurant' && editSurchargeApplicable) {
       const rates = await fetchRateHistory()
       const rate = buildRateResolver(rates)(invoice.date)
       newGstAmount = roundSurcharge(newSubtotal * (rate / 100))
@@ -451,7 +453,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
 
     const { error: invErr } = await supabase
       .from('sale_invoices')
-      .update({ subtotal: newSubtotal, gst_amount: newGstAmount })
+      .update({ subtotal: newSubtotal, gst_amount: newGstAmount, surcharge_applicable: editSurchargeApplicable })
       .eq('id', invoiceId)
 
     setEditSaving(false)
@@ -599,6 +601,18 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
             (restored on removal, corrected on quantity change), and the invoice total recalculates
             accordingly.
           </p>
+          {isRestaurant && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+              Surcharge (9%)
+              <select
+                value={editSurchargeApplicable ? 'yes' : 'no'}
+                onChange={(e) => setEditSurchargeApplicable(e.target.value === 'yes')}
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+          )}
           <table className="data-table">
             <thead>
               <tr>
