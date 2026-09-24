@@ -96,7 +96,7 @@ export default function OutstandingReportTab() {
   const exportRows = sorted.map((r) => ({
     name: r.name,
     type: r.type,
-    outstanding: formatMoney(r.outstanding),
+    outstanding: r.outstanding,
     oldest_unpaid_since: r.oldestUnpaidDate ? formatDate(r.oldestUnpaidDate) : '-',
     age_days: r.ageDays,
   }))
