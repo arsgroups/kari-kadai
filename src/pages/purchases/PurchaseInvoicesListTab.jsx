@@ -25,6 +25,10 @@ export default function PurchaseInvoicesListTab() {
   const [payingId, setPayingId] = useState(null)
   const [paymentForm, setPaymentForm] = useState({ amount: '', payment_type: 'Cash', date: toISODate() })
   const [payingSaving, setPayingSaving] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [editInvoiceNumberDraft, setEditInvoiceNumberDraft] = useState('')
+  const [editDateDraft, setEditDateDraft] = useState('')
+  const [savingEditId, setSavingEditId] = useState(null)
 
   useEffect(() => {
     supabase.from('suppliers').select('id, name').order('name').then(({ data }) => setSuppliers(data ?? []))
@@ -172,6 +176,62 @@ export default function PurchaseInvoicesListTab() {
     load()
   }
 
+  function startEditInvoice(invoice) {
+    setEditingId(invoice.id)
+    setEditInvoiceNumberDraft(invoice.invoice_number ?? '')
+    setEditDateDraft(invoice.date)
+    setError('')
+  }
+
+  // Corrects an invoice number typo or a wrong date entered at purchase
+  // time. Stock movements for this invoice's items are keyed off the
+  // invoice date at the time they were created (trg_purchase_item_stock_
+  // movement), so a date change is mirrored there too -- otherwise
+  // stock-as-of-date snapshots (Month End Report) would disagree with
+  // where the purchase itself now shows up. Mirrors the same fix already
+  // available on a Sale Invoice.
+  async function handleSaveEditInvoice(invoice) {
+    setSavingEditId(invoice.id)
+    setError('')
+    const dateChanged = editDateDraft !== invoice.date
+    const { error: invErr } = await supabase
+      .from('purchase_invoices')
+      .update({ invoice_number: editInvoiceNumberDraft || null, date: editDateDraft })
+      .eq('id', invoice.id)
+    if (invErr) {
+      setSavingEditId(null)
+      setError(invErr.message)
+      return
+    }
+    if (dateChanged) {
+      const { data: itemRows, error: itemsError } = await supabase
+        .from('purchase_invoice_items')
+        .select('id')
+        .eq('purchase_invoice_id', invoice.id)
+      if (itemsError) {
+        setSavingEditId(null)
+        setError(`Invoice saved, but stock movement dates failed to update: ${itemsError.message}`)
+        return
+      }
+      const itemIds = (itemRows ?? []).map((it) => it.id)
+      if (itemIds.length) {
+        const { error: stockError } = await supabase
+          .from('stock_movements')
+          .update({ date: editDateDraft })
+          .eq('reference_type', 'purchase')
+          .in('reference_id', itemIds)
+        if (stockError) {
+          setSavingEditId(null)
+          setError(`Invoice saved, but stock movement dates failed to update: ${stockError.message}`)
+          return
+        }
+      }
+    }
+    setSavingEditId(null)
+    setEditingId(null)
+    load()
+  }
+
   const totalAmount = rows.reduce((sum, r) => sum + r.total, 0)
 
   const exportRows = rows.map((r) => ({
@@ -270,8 +330,24 @@ export default function PurchaseInvoicesListTab() {
                         {expandedId === r.id ? '−' : '+'}
                       </button>
                     </td>
-                    <td>{r.invoice_number}</td>
-                    <td>{formatDate(r.date)}</td>
+                    <td>
+                      {editingId === r.id ? (
+                        <input
+                          style={{ width: 120 }}
+                          value={editInvoiceNumberDraft}
+                          onChange={(e) => setEditInvoiceNumberDraft(e.target.value)}
+                        />
+                      ) : (
+                        r.invoice_number
+                      )}
+                    </td>
+                    <td>
+                      {editingId === r.id ? (
+                        <input type="date" value={editDateDraft} onChange={(e) => setEditDateDraft(e.target.value)} />
+                      ) : (
+                        formatDate(r.date)
+                      )}
+                    </td>
                     <td>{r.suppliers?.name}</td>
                     <td>{formatMoney(r.subtotal)}</td>
                     <td>{formatMoney(r.gst_amount)}</td>
@@ -298,7 +374,30 @@ export default function PurchaseInvoicesListTab() {
                         </>
                       )}
                     </td>
-                    <td></td>
+                    <td>
+                      {editingId === r.id ? (
+                        <>
+                          <button
+                            className="btn-secondary"
+                            disabled={savingEditId === r.id}
+                            onClick={() => handleSaveEditInvoice(r)}
+                          >
+                            {savingEditId === r.id ? 'Saving…' : 'Save'}
+                          </button>{' '}
+                          <button
+                            className="btn-secondary"
+                            disabled={savingEditId === r.id}
+                            onClick={() => setEditingId(null)}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button className="btn-secondary" onClick={() => startEditInvoice(r)}>
+                          Edit
+                        </button>
+                      )}
+                    </td>
                   </tr>
                   {payingId === r.id && (
                     <tr>
