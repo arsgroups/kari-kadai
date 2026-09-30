@@ -369,6 +369,12 @@ create table if not exists suppliers (
   created_at timestamptz not null default now()
 );
 
+-- Links a product to its (default) supplier -- e.g. Prawns sourced from
+-- Yassin Seafood - Geylang. Used by Sale Invoice printing to switch to a
+-- plain-text "Cash Invoice" header instead of the usual branded banner when
+-- any line item on the invoice comes from a specific supplier.
+alter table products add column if not exists supplier_id uuid references suppliers(id);
+
 create sequence if not exists purchase_invoice_seq start 1;
 
 create table if not exists purchase_invoices (

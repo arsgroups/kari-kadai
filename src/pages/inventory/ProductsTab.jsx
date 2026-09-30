@@ -46,12 +46,14 @@ const emptyForm = {
   opening_stock_date: toISODate(),
   is_active: true,
   supplier_only: false,
+  supplier_id: '',
   channels: defaultChannels(),
 }
 
 export default function ProductsTab() {
   const { isAdmin } = useAuth()
   const [rows, setRows] = useState([])
+  const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [form, setForm] = useState(emptyForm)
@@ -109,6 +111,7 @@ export default function ProductsTab() {
 
   useEffect(() => {
     load()
+    supabase.from('suppliers').select('id, name').eq('is_active', true).order('name').then(({ data }) => setSuppliers(data ?? []))
   }, [])
 
   async function startEdit(row) {
@@ -140,6 +143,7 @@ export default function ProductsTab() {
       is_active: data.is_active,
       item_code: data.item_code,
       supplier_only: data.supplier_only ?? false,
+      supplier_id: data.supplier_id ?? '',
       channels,
     })
     setShowForm(true)
@@ -170,6 +174,7 @@ export default function ProductsTab() {
       low_stock_threshold: Number(form.low_stock_threshold) || 0,
       is_active: form.is_active,
       supplier_only: form.supplier_only,
+      supplier_id: form.supplier_id || null,
     }
     if (!form.id) {
       // Opening stock only applies at creation — editing later shouldn't re-log a movement.
@@ -481,6 +486,17 @@ export default function ProductsTab() {
             <label>
               Description
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            </label>
+            <label>
+              Supplier
+              <select value={form.supplier_id} onChange={(e) => setForm({ ...form, supplier_id: e.target.value })}>
+                <option value="">— None —</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Inventory (Stock) Unit
