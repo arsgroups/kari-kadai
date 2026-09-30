@@ -163,7 +163,7 @@ export default function NetProfitReportTab() {
             { content: formatMoney(r.current.grossProfit), styles: { fontStyle: 'bold' } },
           ],
           ['Daily Expenses', formatMoney(r.current.dailyExpenses)],
-          ...(r.partnerSalaryEnabled ? [[`Managing Partner Salary (${r.feeRatePercent}%)`, formatMoney(r.current.partnerFee)]] : []),
+          ...(r.partnerSalaryEnabled ? [[`Managing Partner Fee (${r.feeRatePercent}%)`, formatMoney(r.current.partnerFee)]] : []),
           [
             { content: '= Gross Profit Margin', styles: { fontStyle: 'bold' } },
             {
@@ -324,7 +324,7 @@ export default function NetProfitReportTab() {
               </tr>
               {r.partnerSalaryEnabled && (
                 <tr>
-                  <td>Managing Partner Salary ({r.feeRatePercent}%)</td>
+                  <td>Managing Partner Fee ({r.feeRatePercent}%)</td>
                   <td>{formatMoney(r.current.partnerFee)}</td>
                 </tr>
               )}

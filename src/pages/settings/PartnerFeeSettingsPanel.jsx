@@ -6,7 +6,7 @@ const emptyForm = { effective_from: '', rate_percent: '', note: '' }
 
 // Same date-effective pattern as GST Rate Settings -- a rate change only
 // affects months from its effective_from date onward. Used by Reports ->
-// Month End Report (GP) and Profit Report's Managing Partner Salary
+// Month End Report (GP) and Profit Report's Managing Partner Fee
 // calculation.
 export default function PartnerFeeSettingsPanel() {
   const [rates, setRates] = useState([])
@@ -77,7 +77,7 @@ export default function PartnerFeeSettingsPanel() {
 
   return (
     <div className="card">
-      <h3>Managing Partner Salary</h3>
+      <h3>Managing Partner Fee</h3>
       <p className="muted" style={{ fontSize: '0.85rem' }}>
         Default is 6% of Gross Profit. Only add a new row here if the agreed rate changes in future — Reports →
         Month End Report (GP) and Profit Report both automatically use whichever rate was in effect at the
@@ -91,7 +91,7 @@ export default function PartnerFeeSettingsPanel() {
           disabled={savingEnabled || loading}
           onChange={(e) => handleToggleEnabled(e.target.checked)}
         />
-        Calculate Managing Partner Salary
+        Calculate Managing Partner Fee
       </label>
       <p className="muted" style={{ fontSize: '0.8rem', marginTop: '-0.75rem', marginBottom: '1rem' }}>
         Unchecked: both reports skip the calculation entirely for whichever month you generate them, and the

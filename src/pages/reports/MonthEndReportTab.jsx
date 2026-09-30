@@ -105,7 +105,7 @@ export default function MonthEndReportTab() {
     const r = report
     const [prevY, prevM] = previousMonthOf(year, month)
     const [nextY, nextM] = nextMonthOf(year, month)
-    const growthPct = pctDiff(r.current.revenue, r.previous.revenue)
+    const growthPct = pctDiff(r.current.revenue, r.previous.revenue * r.dayRatio)
     const growthValue = r.previousMonthHasData ? r.current.revenue - r.previous.revenue : null
 
     try {
@@ -259,7 +259,7 @@ export default function MonthEndReportTab() {
             { content: formatMoney(r.current.grossProfit), styles: { fontStyle: 'bold' } },
           ],
           ['Daily Expenses', formatMoney(r.current.dailyExpenses)],
-          ...(r.partnerSalaryEnabled ? [[`Managing Partner Salary (${r.feeRatePercent}%)`, formatMoney(r.current.partnerFee)]] : []),
+          ...(r.partnerSalaryEnabled ? [[`Managing Partner Fee (${r.feeRatePercent}%)`, formatMoney(r.current.partnerFee)]] : []),
           [
             { content: '= Gross Profit Margin', styles: { fontStyle: 'bold', fontSize: 11 } },
             {
@@ -310,8 +310,12 @@ export default function MonthEndReportTab() {
         doc.text(`Sales ${growthValue >= 0 ? 'up' : 'down'} ${formatMoney(Math.abs(growthValue))} vs ${monthLabel(prevY, prevM)}`, pageWidth / 2, y, {
           align: 'center',
         })
+        y += 5
+        doc.setFontSize(8)
+        doc.setTextColor(130, 130, 130)
+        doc.text(`${r.currentDays} days vs ${r.previousDays} days — growth % is day-adjusted`, pageWidth / 2, y, { align: 'center' })
         doc.setTextColor(20, 20, 20)
-        y += 10
+        y += 8
       }
 
       if (chartRef.current) {
@@ -425,7 +429,7 @@ export default function MonthEndReportTab() {
   const r = report
   const [prevYear, prevMonth] = previousMonthOf(year, month)
   const [nextYear, nextMonth] = nextMonthOf(year, month)
-  const salesGrowthPct = r ? pctDiff(r.current.revenue, r.previous.revenue) : null
+  const salesGrowthPct = r ? pctDiff(r.current.revenue, r.previous.revenue * r.dayRatio) : null
   const salesGrowthValue = r && r.previousMonthHasData ? r.current.revenue - r.previous.revenue : null
 
   return (
@@ -538,7 +542,7 @@ export default function MonthEndReportTab() {
               </tr>
               {r.partnerSalaryEnabled && (
                 <tr>
-                  <td>Managing Partner Salary ({r.feeRatePercent}%)</td>
+                  <td>Managing Partner Fee ({r.feeRatePercent}%)</td>
                   <td>{formatMoney(r.current.partnerFee)}</td>
                 </tr>
               )}
@@ -572,6 +576,9 @@ export default function MonthEndReportTab() {
               <div style={{ fontSize: '1.3rem', fontWeight: 600 }}>
                 Sales {salesGrowthValue >= 0 ? 'up' : 'down'} {formatMoney(Math.abs(salesGrowthValue))} vs{' '}
                 {monthLabel(prevYear, prevMonth)}
+              </div>
+              <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.2rem' }}>
+                {r.currentDays} days vs {r.previousDays} days — growth % is day-adjusted
               </div>
             </div>
           )}

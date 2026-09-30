@@ -12,6 +12,14 @@ import { toISODate } from './format'
 // DATE HELPERS
 // ============================================================================
 
+// Inclusive day count between two ISO dates -- used to normalize
+// month-over-month growth for months of different lengths (e.g. a 31-day
+// month naturally sells more than a 30-day one; comparing raw totals alone
+// would read that as growth that isn't really there).
+function daysInclusive(startISO, endISO) {
+  return Math.round((new Date(endISO + 'T00:00:00') - new Date(startISO + 'T00:00:00')) / 86400000) + 1
+}
+
 // { year, month } -- month is 1-12. Returns ISO start/end (inclusive) for
 // that calendar month and for the one immediately before it.
 export function monthRanges(year, month) {
@@ -149,7 +157,7 @@ function computePnL({ salesRows, purchasesRows, expenseRows, feeRatePercent }) {
   // business rule: the fee is not floored at zero on a loss month).
   const partnerFee = round2(grossProfit * (feeRatePercent / 100))
   // 7. Profit After Managing Partner Fee (= Gross Profit - Daily Expenses -
-  // Monthly Expenses - Managing Partner Salary -- this is also exactly the
+  // Monthly Expenses - Managing Partner Fee -- this is also exactly the
   // "Net Profit" figure Reports -> Net Profit Report builds on, before Fixed
   // Assets are considered)
   const profitAfterFee = round2(profitBeforeFee - partnerFee)
@@ -160,7 +168,7 @@ function computePnL({ salesRows, purchasesRows, expenseRows, feeRatePercent }) {
   const netMarginPct = pctOf(finalNetProfit, revenue)
 
   // GP report's own headline figure: Gross Profit with only Daily Expenses
-  // and the Managing Partner Salary taken off -- deliberately NOT Monthly
+  // and the Managing Partner Fee taken off -- deliberately NOT Monthly
   // Expenses or Fixed Assets, since this report stops at Gross Profit and
   // never goes all the way to Final Net Profit.
   const adjustedGrossMargin = round2(grossProfit - expenses.daily - partnerFee)
@@ -210,7 +218,11 @@ function computeCapital({ capitalBefore, capitalDuring }) {
   }
 }
 
-function computeChannelAnalysis(currentByChannel, previousByChannel) {
+// dayRatio (currentDays / previousDays) scales the previous month's figure
+// up/down to what it would have been at the current month's day count,
+// purely for the growth % -- the displayed previous/change $ figures stay
+// as the real historical numbers, only pctChange is day-adjusted.
+function computeChannelAnalysis(currentByChannel, previousByChannel, dayRatio = 1) {
   const channels = [...new Set([...Object.keys(currentByChannel), ...Object.keys(previousByChannel)])]
   const totalCurrent = Object.values(currentByChannel).reduce((s, v) => s + v, 0)
   const rows = channels
@@ -222,7 +234,7 @@ function computeChannelAnalysis(currentByChannel, previousByChannel) {
         current,
         previous,
         change: round2(current - previous),
-        pctChange: pctChange(current, previous),
+        pctChange: pctChange(current, round2(previous * dayRatio)),
         contributionPct: pctOf(current, totalCurrent),
       }
     })
@@ -393,7 +405,7 @@ function computeReconciliation({ current, channelAnalysis, inventory }) {
 // Performance summary for the GP report -- dynamically generated from the
 // actual computed figures, never hand-authored. Scoped to what this report
 // actually shows (Sales, Purchase, Gross Profit/Margin, Daily Expenses,
-// Managing Partner Salary) -- no inventory/cost-cutting/net-profit lines,
+// Managing Partner Fee) -- no inventory/cost-cutting/net-profit lines,
 // since those sections don't exist in this report.
 function computeHighlights({ current, previous }) {
   const lines = []
@@ -424,7 +436,7 @@ function computeHighlights({ current, previous }) {
   }
 
   lines.push({
-    text: `Gross Margin after Daily Expenses and Managing Partner Salary: ${money(current.adjustedGrossMargin)}${
+    text: `Gross Margin after Daily Expenses and Managing Partner Fee: ${money(current.adjustedGrossMargin)}${
       current.adjustedGrossMarginPct != null ? ` (${current.adjustedGrossMarginPct.toFixed(1)}% of Sales)` : ''
     }.`,
     tone: current.adjustedGrossMargin >= 0 ? 'good' : 'bad',
@@ -461,7 +473,7 @@ function computeNextMonthTarget(current, channelAnalysis) {
 }
 
 export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
-  // Settings -> Managing Partner Salary has an Enable checkbox -- when off,
+  // Settings -> Managing Partner Fee has an Enable checkbox -- when off,
   // the fee is 0% everywhere (current and previous month alike) and the
   // report UI hides its line entirely rather than showing a $0.00 row.
   const partnerSalaryEnabled = raw.partnerSalaryEnabled !== false
@@ -495,9 +507,17 @@ export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
 
   const capital = computeCapital(raw)
 
+  // Different-length months (e.g. a 31-day month vs a 30-day one) naturally
+  // produce different sales totals even with zero real growth -- dayRatio
+  // scales the previous month's figures up/down to this month's day count
+  // so growth % reflects actual performance, not the calendar.
+  const currentDays = daysInclusive(raw.ranges.currentStart, raw.ranges.currentEnd)
+  const previousDays = daysInclusive(raw.ranges.previousStart, raw.ranges.previousEnd)
+  const dayRatio = previousDays > 0 ? currentDays / previousDays : 1
+
   const currentByChannel = computeChannelSales(raw.currentSales)
   const previousByChannel = computeChannelSales(raw.previousSales)
-  const channelAnalysis = computeChannelAnalysis(currentByChannel, previousByChannel)
+  const channelAnalysis = computeChannelAnalysis(currentByChannel, previousByChannel, dayRatio)
 
   const costCutting = computeCostCutting(current.expenseByCategory, previous.expenseByCategory)
 
@@ -516,20 +536,30 @@ export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
 
   const reconciliation = computeReconciliation({ current, channelAnalysis, inventory })
 
+  // previousForPct scales a day-driven figure (revenue, COGS, and anything
+  // derived purely from them) to the current month's day count before
+  // computing growth % -- Monthly Expenses, Fixed Asset spend, and Closing
+  // Stock Value don't scale with days open (rent is rent regardless of a
+  // 30- vs 31-day month; stock value is a snapshot, not a flow), so those
+  // are left on a raw comparison.
   const momKpis = [
-    { label: 'Sales', previous: previous.revenue, current: current.revenue },
-    { label: 'Purchases / COGS', previous: previous.cogs, current: current.cogs },
-    { label: 'Gross Profit', previous: previous.grossProfit, current: current.grossProfit },
+    { label: 'Sales', previous: previous.revenue, current: current.revenue, previousForPct: previous.revenue * dayRatio },
+    { label: 'Purchases / COGS', previous: previous.cogs, current: current.cogs, previousForPct: previous.cogs * dayRatio },
+    { label: 'Gross Profit', previous: previous.grossProfit, current: current.grossProfit, previousForPct: previous.grossProfit * dayRatio },
     { label: 'Gross Profit %', previous: previous.grossMarginPct, current: current.grossMarginPct, isPct: true },
-    { label: 'Daily Expenses', previous: previous.dailyExpenses, current: current.dailyExpenses },
+    { label: 'Daily Expenses', previous: previous.dailyExpenses, current: current.dailyExpenses, previousForPct: previous.dailyExpenses * dayRatio },
     { label: 'Monthly Expenses', previous: previous.monthlyExpenses, current: current.monthlyExpenses },
     { label: 'Total Operating Expenses', previous: previous.totalOperatingExpenses, current: current.totalOperatingExpenses },
-    { label: 'Managing Partner Fee', previous: previous.partnerFee, current: current.partnerFee },
+    { label: 'Managing Partner Fee', previous: previous.partnerFee, current: current.partnerFee, previousForPct: previous.partnerFee * dayRatio },
     { label: 'Fixed Asset Expenses', previous: previous.fixedAssetExpenses, current: current.fixedAssetExpenses },
     { label: 'Net Profit', previous: previous.finalNetProfit, current: current.finalNetProfit },
     { label: 'Net Profit Margin', previous: previous.netMarginPct, current: current.netMarginPct, isPct: true },
     { label: 'Closing Stock Value', previous: inventory.previousClosingStockValue, current: inventory.closingStockValue },
-  ].map((k) => ({ ...k, change: k.current != null && k.previous != null ? round2(k.current - k.previous) : null, pctChange: pctChange(k.current, k.previous) }))
+  ].map((k) => ({
+    ...k,
+    change: k.current != null && k.previous != null ? round2(k.current - k.previous) : null,
+    pctChange: pctChange(k.current, k.previousForPct ?? k.previous),
+  }))
 
   const highlights = computeHighlights({ current, previous })
   const nextMonthTarget = computeNextMonthTarget(current, channelAnalysis)
@@ -540,6 +570,9 @@ export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
     ranges: raw.ranges,
     feeRatePercent,
     partnerSalaryEnabled,
+    currentDays,
+    previousDays,
+    dayRatio,
     current,
     previous,
     previousMonthHasData,
