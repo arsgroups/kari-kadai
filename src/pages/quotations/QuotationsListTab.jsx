@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, toISODate } from '../../lib/format'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import QuotationView from './QuotationView'
 
 function firstOfMonth() {
@@ -29,9 +30,11 @@ export default function QuotationsListTab() {
 
     if (filters.channel) query = query.eq('channel', filters.channel)
 
-    const { data, error } = await query.limit(500)
-    if (error) setError(error.message)
-    else setRows(data ?? [])
+    try {
+      setRows(await fetchAllRows(query))
+    } catch (e) {
+      setError(e.message)
+    }
     setLoading(false)
   }
 

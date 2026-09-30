@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import ExportButtons from '../../components/ExportButtons'
 
 function firstOfMonth() {
@@ -20,19 +21,19 @@ export default function SalesReturnsListTab() {
   async function load() {
     setLoading(true)
     setError('')
-    const { data, error } = await supabase
-      .from('sale_returns')
-      .select('id, return_number, date, reason, subtotal, gst_amount, total, sale_invoices(invoice_number, channel, customers(name))')
-      .gte('date', from)
-      .lte('date', to)
-      .order('date', { ascending: false })
-      .limit(500)
-    if (error) {
-      setError(error.message)
-      setLoading(false)
-      return
+    try {
+      const data = await fetchAllRows(
+        supabase
+          .from('sale_returns')
+          .select('id, return_number, date, reason, subtotal, gst_amount, total, sale_invoices(invoice_number, channel, customers(name))')
+          .gte('date', from)
+          .lte('date', to)
+          .order('date', { ascending: false })
+      )
+      setRows(data)
+    } catch (e) {
+      setError(e.message)
     }
-    setRows(data ?? [])
     setLoading(false)
   }
 

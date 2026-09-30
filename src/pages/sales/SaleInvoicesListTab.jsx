@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { formatDate, formatMoney, toISODate } from '../../lib/format'
+import { fetchAllRows } from '../../lib/fetchAllRows'
 import ExportButtons from '../../components/ExportButtons'
 import SaleInvoiceView from './SaleInvoiceView'
 
@@ -64,19 +65,21 @@ export default function SaleInvoicesListTab() {
     if (filters.customer_id) query = query.eq('customer_id', filters.customer_id)
     if (filters.payment_type) query = query.eq('payment_type', filters.payment_type)
 
-    const { data, error } = await query.limit(500)
-    if (error) {
-      setError(error.message)
+    let data
+    try {
+      data = await fetchAllRows(query)
+    } catch (e) {
+      setError(e.message)
       setLoading(false)
       return
     }
-    setRows(data ?? [])
+    setRows(data)
 
-    const invoiceIds = (data ?? []).map((r) => r.id)
+    const invoiceIds = data.map((r) => r.id)
     if (invoiceIds.length) {
-      const [{ data: paymentRows }, { data: itemRows }] = await Promise.all([
-        supabase.from('customer_payments').select('invoice_id, amount').in('invoice_id', invoiceIds),
-        supabase.from('sale_invoice_items').select('sale_invoice_id, product_id, rate').in('sale_invoice_id', invoiceIds),
+      const [paymentRows, itemRows] = await Promise.all([
+        fetchAllRows(supabase.from('customer_payments').select('invoice_id, amount').in('invoice_id', invoiceIds)),
+        fetchAllRows(supabase.from('sale_invoice_items').select('sale_invoice_id, product_id, rate').in('sale_invoice_id', invoiceIds)),
       ])
       const paidMap = {}
       ;(paymentRows ?? []).forEach((p) => {
