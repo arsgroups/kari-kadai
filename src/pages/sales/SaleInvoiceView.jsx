@@ -6,11 +6,6 @@ import { COMPANY } from '../../lib/companyInfo'
 import invoiceHeaderImg from '../../assets/invoice-header.jpg'
 import { useAuth } from '../../contexts/AuthContext'
 
-// Any invoice with a line item sourced from this supplier prints a plain
-// text "Cash Invoice" header (company name, address, UEN) instead of the
-// usual branded banner image.
-const CASH_INVOICE_SUPPLIER_NAME = 'Yassin Seafood - Geylang'
-
 // Fetches an image (bundled asset or a configured Storage URL) and resolves
 // its PDF-ready data URL along with format + natural size, so a custom
 // upload of any aspect ratio still renders at the correct proportions.
@@ -89,7 +84,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
         .single(),
       supabase
         .from('sale_invoice_items')
-        .select('*, products(name, suppliers(name))')
+        .select('*, products(name)')
         .eq('sale_invoice_id', invoiceId),
       supabase.from('branding_settings').select('header_image_url, footer_image_url').single(),
     ])
@@ -103,7 +98,6 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
   const footerImageUrl = branding?.footer_image_url || null
   const isRestaurant = invoice?.channel === 'Restaurant'
   const showSurcharge = isRestaurant && Number(invoice?.gst_amount) > 0
-  const isCashInvoice = items.some((it) => it.products?.suppliers?.name === CASH_INVOICE_SUPPLIER_NAME)
 
   async function buildPdf() {
     if (!invoice) return null
@@ -114,36 +108,14 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
     ])
     const doc = new jsPDF()
 
-    // Any invoice carrying an item from CASH_INVOICE_SUPPLIER_NAME prints a
-    // plain text header (name, address, UEN, "Cash Invoice") instead of the
-    // usual branded banner image.
-    let headerBottomY
-    if (isCashInvoice) {
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(15)
-      doc.text(COMPANY.name, 14, 18)
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(10)
-      doc.text(COMPANY.addressLine1, 14, 24)
-      doc.text(COMPANY.addressLine2, 14, 29)
-      doc.setFontSize(9)
-      doc.text(`UEN: ${COMPANY.uen}`, 14, 34)
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(12)
-      doc.text('CASH INVOICE', 14, 41)
-      doc.setFont('helvetica', 'normal')
-      headerBottomY = 41
-    } else {
-      // Fit the header to the usable A4 width (210mm - 2*14mm margin), at
-      // whatever aspect ratio the configured (or default) image actually has.
-      const bannerWidth = 182
-      const headerInfo = await loadImageInfo(headerImageUrl)
-      const bannerHeight = bannerWidth / (headerInfo.width / headerInfo.height)
-      doc.addImage(headerInfo.dataUrl, headerInfo.format, 14, 10, bannerWidth, bannerHeight)
-      headerBottomY = 10 + bannerHeight
-    }
+    // Fit the header to the usable A4 width (210mm - 2*14mm margin), at
+    // whatever aspect ratio the configured (or default) image actually has.
+    const bannerWidth = 182
+    const headerInfo = await loadImageInfo(headerImageUrl)
+    const bannerHeight = bannerWidth / (headerInfo.width / headerInfo.height)
+    doc.addImage(headerInfo.dataUrl, headerInfo.format, 14, 10, bannerWidth, bannerHeight)
 
-    const metaY = headerBottomY + 8
+    const metaY = 10 + bannerHeight + 8
     doc.setFontSize(8)
     doc.text('Bill To:', 14, metaY)
     doc.setFontSize(10)
@@ -724,20 +696,7 @@ export default function SaleInvoiceView({ invoiceId, onClose, onDeleted }) {
       )}
 
       <div className="invoice-sheet" style={editing ? { display: 'none' } : undefined}>
-        {isCashInvoice ? (
-          <div style={{ marginBottom: '1rem' }}>
-            <h2 style={{ margin: 0 }}>{COMPANY.name}</h2>
-            <p className="muted" style={{ margin: '0.2rem 0' }}>
-              {COMPANY.addressLine1}, {COMPANY.addressLine2}
-            </p>
-            <p className="muted" style={{ margin: '0.2rem 0', fontSize: '0.85rem' }}>
-              UEN: {COMPANY.uen}
-            </p>
-            <p style={{ margin: '0.4rem 0 0', fontWeight: 700 }}>CASH INVOICE</p>
-          </div>
-        ) : (
-          <img src={headerImageUrl} alt={COMPANY.name} className="invoice-banner" />
-        )}
+        <img src={headerImageUrl} alt={COMPANY.name} className="invoice-banner" />
 
         <div className="invoice-meta-row">
           <div>
