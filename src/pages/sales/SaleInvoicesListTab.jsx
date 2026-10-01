@@ -19,6 +19,12 @@ const emptyFilters = {
   payment_status: '',
 }
 
+// Totals/exports still cover every invoice matching the filters -- only the
+// on-screen table is paged, to keep the DOM small when a range has hundreds
+// or thousands of invoices (that render cost, not the data fetch, is what
+// was making a 1-2 month filter feel slow).
+const PAGE_SIZE = 50
+
 export default function SaleInvoicesListTab() {
   const [rows, setRows] = useState([])
   const [customers, setCustomers] = useState([])
@@ -34,6 +40,7 @@ export default function SaleInvoicesListTab() {
   const [payingSaving, setPayingSaving] = useState(false)
   const [costByProduct, setCostByProduct] = useState({})
   const [belowCostInvoices, setBelowCostInvoices] = useState(new Set())
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     supabase.from('customers').select('id, name').order('name').then(({ data }) => setCustomers(data ?? []))
@@ -104,6 +111,10 @@ export default function SaleInvoicesListTab() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, costByProduct])
+
+  useEffect(() => {
+    setPage(1)
+  }, [filters])
 
   async function toggleExpand(invoiceId) {
     if (expandedId === invoiceId) {
@@ -183,6 +194,10 @@ export default function SaleInvoicesListTab() {
 
   const totalAmount = filteredRows.reduce((sum, r) => sum + r.total, 0)
   const totalOutstanding = filteredRows.reduce((sum, r) => sum + outstandingFor(r), 0)
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const pagedRows = filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   const exportRows = filteredRows.map((r) => ({
     invoice_number: r.invoice_number,
@@ -302,7 +317,7 @@ export default function SaleInvoicesListTab() {
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map((r) => {
+              {pagedRows.map((r) => {
                 const status = paymentStatus(r)
                 const outstanding = outstandingFor(r)
                 const belowCost = belowCostInvoices.has(r.id)
@@ -457,6 +472,25 @@ export default function SaleInvoicesListTab() {
               )}
             </tbody>
           </table>
+        )}
+        {!loading && filteredRows.length > PAGE_SIZE && (
+          <div className="toolbar no-print" style={{ justifyContent: 'space-between', marginTop: '0.75rem' }}>
+            <span className="muted" style={{ fontSize: '0.85rem' }}>
+              Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filteredRows.length)} of{' '}
+              {filteredRows.length} invoices
+            </span>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <button className="btn-secondary" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>
+                Previous
+              </button>
+              <span className="muted" style={{ fontSize: '0.85rem' }}>
+                Page {safePage} of {totalPages}
+              </span>
+              <button className="btn-secondary" disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)}>
+                Next
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
