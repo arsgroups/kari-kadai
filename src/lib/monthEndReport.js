@@ -407,10 +407,15 @@ function computeReconciliation({ current, channelAnalysis, inventory }) {
 // actually shows (Sales, Purchase, Gross Profit/Margin, Daily Expenses,
 // Managing Partner Fee) -- no inventory/cost-cutting/net-profit lines,
 // since those sections don't exist in this report.
-function computeHighlights({ current, previous }) {
+function computeHighlights({ current, previous, dayRatio }) {
   const lines = []
 
-  const revenueChange = current.hasSalesData && previous.hasSalesData ? pctChange(current.revenue, previous.revenue) : null
+  // Day-adjusted: a 31-day month vs a 30-day one shouldn't read as "sales
+  // decreased" just because the calendar handed it one fewer day -- scale
+  // previous month's revenue to the current month's day count first, same
+  // normalization as the headline Sales growth figure and momKpis.
+  const revenueChange =
+    current.hasSalesData && previous.hasSalesData ? pctChange(current.revenue, previous.revenue * dayRatio) : null
   if (revenueChange != null) {
     lines.push({
       text: `Sales ${revenueChange >= 0 ? 'increased' : 'decreased'} by ${Math.abs(revenueChange).toFixed(1)}% (${formatSigned(current.revenue - previous.revenue)}) compared with last month.`,
@@ -424,16 +429,6 @@ function computeHighlights({ current, previous }) {
     text: `Gross Profit was ${money(current.grossProfit)}, a margin of ${current.grossMarginPct != null ? current.grossMarginPct.toFixed(1) + '%' : 'N/A'} on Sales.`,
     tone: current.grossProfit >= 0 ? 'good' : 'bad',
   })
-
-  const expenseChange = pctChange(current.dailyExpenses, previous.dailyExpenses)
-  if (expenseChange != null) {
-    lines.push({
-      text: `Daily Expenses ${expenseChange <= 0 ? 'decreased' : 'increased'} by ${Math.abs(expenseChange).toFixed(1)}% (${formatSigned(current.dailyExpenses - previous.dailyExpenses)}) compared with last month.`,
-      tone: expenseChange <= 0 ? 'good' : 'bad',
-    })
-  } else {
-    lines.push({ text: `Daily Expenses were ${money(current.dailyExpenses)} this month -- no comparable figure from last month.`, tone: 'neutral' })
-  }
 
   lines.push({
     text: `Gross Margin after Daily Expenses: ${money(current.adjustedGrossMargin)}${
@@ -561,7 +556,7 @@ export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
     pctChange: pctChange(k.current, k.previousForPct ?? k.previous),
   }))
 
-  const highlights = computeHighlights({ current, previous })
+  const highlights = computeHighlights({ current, previous, dayRatio })
   const nextMonthTarget = computeNextMonthTarget(current, channelAnalysis)
 
   const previousMonthHasData = raw.previousSales.length > 0 || raw.previousPurchases.length > 0 || raw.previousExpenses.length > 0
