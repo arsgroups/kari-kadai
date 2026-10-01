@@ -436,7 +436,7 @@ function computeHighlights({ current, previous }) {
   }
 
   lines.push({
-    text: `Gross Margin after Daily Expenses and Managing Partner Fee: ${money(current.adjustedGrossMargin)}${
+    text: `Gross Margin after Daily Expenses: ${money(current.adjustedGrossMargin)}${
       current.adjustedGrossMarginPct != null ? ` (${current.adjustedGrossMarginPct.toFixed(1)}% of Sales)` : ''
     }.`,
     tone: current.adjustedGrossMargin >= 0 ? 'good' : 'bad',

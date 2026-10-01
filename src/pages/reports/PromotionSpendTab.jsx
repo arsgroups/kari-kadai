@@ -10,6 +10,11 @@ function firstOfMonth() {
   return toISODate(new Date(d.getFullYear(), d.getMonth(), 1))
 }
 
+// Excluded from this report only -- its $0 lines aren't a promotional
+// giveaway, so they shouldn't count as promotion spend. Doesn't affect any
+// other report, invoice, or stock behavior.
+const EXCLUDED_PRODUCT_NAMES = ['restaurant mutton keema']
+
 export default function PromotionSpendTab() {
   const [from, setFrom] = useState(firstOfMonth())
   const [to, setTo] = useState(toISODate())
@@ -74,6 +79,7 @@ export default function PromotionSpendTab() {
     const data = (rawRows ?? [])
       .map((it) => ({ ...it, quantity: round2(it.quantity - (returnedByItemId[it.id] ?? 0)) }))
       .filter((it) => it.quantity > 0)
+      .filter((it) => !EXCLUDED_PRODUCT_NAMES.includes((it.products?.name ?? '').trim().toLowerCase()))
 
     const byGroup = {}
     ;(data ?? []).forEach((it) => {
