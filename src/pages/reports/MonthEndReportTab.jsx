@@ -372,6 +372,27 @@ export default function MonthEndReportTab() {
       })
       y += 5
 
+      // ---- New Restaurant Customers ----
+      sectionTitle('New Restaurant Customers This Month')
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9.5)
+      if (r.newRestaurantCustomers.length === 0) {
+        ensureSpace(6)
+        doc.setTextColor(120, 120, 120)
+        doc.text('No new Restaurant-channel customers added this month.', marginX, y)
+        doc.setTextColor(20, 20, 20)
+        y += 7
+      } else {
+        r.newRestaurantCustomers.forEach((name) => {
+          ensureSpace(5.5)
+          doc.setFillColor(20, 20, 20)
+          doc.circle(marginX + 0.8, y - 1.4, 0.8, 'F')
+          doc.text(name, marginX + 4, y)
+          y += 5.2
+        })
+        y += 3
+      }
+
       // ---- Footer: page numbers on every page ----
       const pageCount = doc.internal.getNumberOfPages()
       for (let i = 1; i <= pageCount; i++) {
@@ -607,6 +628,18 @@ export default function MonthEndReportTab() {
               </li>
             )}
           </ul>
+
+          {/* ==================== NEW RESTAURANT CUSTOMERS ==================== */}
+          <h2>New Restaurant Customers This Month</h2>
+          {r.newRestaurantCustomers.length === 0 ? (
+            <p className="muted">No new Restaurant-channel customers added this month.</p>
+          ) : (
+            <ul style={{ fontSize: '0.9rem' }}>
+              {r.newRestaurantCustomers.map((name) => (
+                <li key={name}>{name}</li>
+              ))}
+            </ul>
+          )}
 
           <div className="invoice-footer">
             <p className="muted">This report is confidential and prepared for internal management and stakeholder review.</p>

@@ -545,6 +545,10 @@ export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
 
   const highlights = computeHighlights({ current, previous, dayRatio })
 
+  const newRestaurantCustomers = [...new Set((raw.newRestaurantCustomers ?? []).map((c) => c.name))].sort((a, b) =>
+    a.localeCompare(b)
+  )
+
   const previousMonthHasData = raw.previousSales.length > 0 || raw.previousPurchases.length > 0 || raw.previousExpenses.length > 0
 
   return {
@@ -566,5 +570,6 @@ export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
     reconciliation,
     momKpis,
     highlights,
+    newRestaurantCustomers,
   }
 }

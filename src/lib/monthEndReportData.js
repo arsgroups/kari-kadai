@@ -10,6 +10,12 @@ function dayBefore(isoDate) {
   return toISODate(d)
 }
 
+function dayAfter(isoDate) {
+  const d = new Date(isoDate + 'T00:00:00')
+  d.setDate(d.getDate() + 1)
+  return toISODate(d)
+}
+
 async function fetchStockValueAsOf(asOfDate, products) {
   const totals = {}
   const movements = await fetchAllRows(
@@ -54,6 +60,7 @@ export async function fetchMonthEndRawData({ year, month }) {
     previousSaleItems,
     currentReturnItems,
     previousReturnItems,
+    newRestaurantCustomers,
   ] = await Promise.all([
     fetchAllRows(supabase.from('sale_invoices').select('id, date, total, channel').gte('date', currentStart).lte('date', currentEnd)),
     fetchAllRows(supabase.from('sale_invoices').select('id, date, total, channel').gte('date', previousStart).lte('date', previousEnd)),
@@ -119,6 +126,14 @@ export async function fetchMonthEndRawData({ year, month }) {
         .gte('sale_returns.date', previousStart)
         .lte('sale_returns.date', previousEnd)
     ),
+    fetchAllRows(
+      supabase
+        .from('customers')
+        .select('name, created_at')
+        .eq('type', 'Restaurant')
+        .gte('created_at', currentStart)
+        .lt('created_at', dayAfter(currentEnd))
+    ),
   ])
 
   const [stockAtTwoMonthsAgoEnd, stockAtPreviousEnd, stockAtCurrentEnd, { data: partnerSalarySettings }] = await Promise.all([
@@ -146,6 +161,7 @@ export async function fetchMonthEndRawData({ year, month }) {
     previousSaleItems,
     currentReturnItems,
     previousReturnItems,
+    newRestaurantCustomers,
     stockAtTwoMonthsAgoEnd,
     stockAtPreviousEnd,
     stockAtCurrentEnd,
