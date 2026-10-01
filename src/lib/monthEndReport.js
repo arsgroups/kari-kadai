@@ -414,11 +414,16 @@ function computeHighlights({ current, previous, dayRatio }) {
   // decreased" just because the calendar handed it one fewer day -- scale
   // previous month's revenue to the current month's day count first, same
   // normalization as the headline Sales growth figure and momKpis.
-  const revenueChange =
-    current.hasSalesData && previous.hasSalesData ? pctChange(current.revenue, previous.revenue * dayRatio) : null
+  const previousRevenueNormalized = previous.revenue * dayRatio
+  const revenueChange = current.hasSalesData && previous.hasSalesData ? pctChange(current.revenue, previousRevenueNormalized) : null
   if (revenueChange != null) {
+    // The $ figure here is the day-adjusted difference, not the raw one --
+    // otherwise a 31- vs 30-day month could show "increased by 1.1%" next
+    // to a negative dollar amount (the real total was lower simply because
+    // the month had one fewer day), which reads as a contradiction even
+    // though both numbers are individually correct.
     lines.push({
-      text: `Sales ${revenueChange >= 0 ? 'increased' : 'decreased'} by ${Math.abs(revenueChange).toFixed(1)}% (${formatSigned(current.revenue - previous.revenue)}) compared with last month.`,
+      text: `Sales ${revenueChange >= 0 ? 'increased' : 'decreased'} by ${Math.abs(revenueChange).toFixed(1)}% (${formatSigned(current.revenue - previousRevenueNormalized)}, day-adjusted) compared with last month.`,
       tone: revenueChange >= 0 ? 'good' : 'bad',
     })
   } else {
@@ -447,24 +452,6 @@ function money(n) {
 function formatSigned(n) {
   const sign = n >= 0 ? '+' : '-'
   return `${sign}S$${Math.abs(n).toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-// Next month's sales target: 12% growth over this month's actuals, applied
-// overall and per channel using each channel's own current-month sales as
-// its base.
-function computeNextMonthTarget(current, channelAnalysis) {
-  const TARGET_PCT = 12
-  const channels = channelAnalysis.rows.map((c) => ({
-    channel: c.channel,
-    currentSales: c.current,
-    target: round2(c.current * (1 + TARGET_PCT / 100)),
-  }))
-  return {
-    pct: TARGET_PCT,
-    currentSales: current.revenue,
-    target: round2(current.revenue * (1 + TARGET_PCT / 100)),
-    channels,
-  }
 }
 
 export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
@@ -557,7 +544,6 @@ export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
   }))
 
   const highlights = computeHighlights({ current, previous, dayRatio })
-  const nextMonthTarget = computeNextMonthTarget(current, channelAnalysis)
 
   const previousMonthHasData = raw.previousSales.length > 0 || raw.previousPurchases.length > 0 || raw.previousExpenses.length > 0
 
@@ -580,6 +566,5 @@ export function computeMonthEndReport(raw, { feeRatePercentOverride } = {}) {
     reconciliation,
     momKpis,
     highlights,
-    nextMonthTarget,
   }
 }

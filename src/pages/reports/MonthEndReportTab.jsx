@@ -23,10 +23,6 @@ function previousMonthOf(year, month) {
   return month === 1 ? [year - 1, 12] : [year, month - 1]
 }
 
-function nextMonthOf(year, month) {
-  return month === 12 ? [year + 1, 1] : [year, month + 1]
-}
-
 function fmtPct(v) {
   return v == null ? 'N/A' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`
 }
@@ -104,9 +100,8 @@ export default function MonthEndReportTab() {
     setPdfError('')
     const r = report
     const [prevY, prevM] = previousMonthOf(year, month)
-    const [nextY, nextM] = nextMonthOf(year, month)
     const growthPct = pctDiff(r.current.revenue, r.previous.revenue * r.dayRatio)
-    const growthValue = r.previousMonthHasData ? r.current.revenue - r.previous.revenue : null
+    const growthValue = r.previousMonthHasData ? r.current.revenue - r.previous.revenue * r.dayRatio : null
 
     try {
       const [{ default: jsPDF }, autoTableModule, html2canvasModule] = await Promise.all([
@@ -313,7 +308,7 @@ export default function MonthEndReportTab() {
         y += 5
         doc.setFontSize(8)
         doc.setTextColor(130, 130, 130)
-        doc.text(`${r.currentDays} days vs ${r.previousDays} days — growth % is day-adjusted`, pageWidth / 2, y, { align: 'center' })
+        doc.text(`${r.currentDays} days vs ${r.previousDays} days — figures above are day-adjusted`, pageWidth / 2, y, { align: 'center' })
         doc.setTextColor(20, 20, 20)
         y += 8
       }
@@ -377,32 +372,6 @@ export default function MonthEndReportTab() {
       })
       y += 5
 
-      // ---- Next Month Target ----
-      sectionTitle(`${monthLabel(nextY, nextM)} Target`)
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(9)
-      const targetNote = doc.splitTextToSize(
-        `Set at ${r.nextMonthTarget.pct}% growth over ${monthLabel(year, month)}'s actual sales, split across channels using each channel's own ${monthLabel(year, month)} sales as its base.`,
-        usableWidth
-      )
-      ensureSpace(targetNote.length * 4.5 + 4)
-      doc.text(targetNote, marginX, y)
-      y += targetNote.length * 4.5 + 4
-
-      kpiRow([
-        { label: `${monthLabel(year, month)} Sales (Base)`, value: formatMoney(r.nextMonthTarget.currentSales) },
-        { label: `Target (${r.nextMonthTarget.pct}%)`, value: formatMoney(r.nextMonthTarget.target) },
-      ])
-
-      autoTable(doc, {
-        startY: y,
-        margin: { left: marginX, right: marginX },
-        head: [['Channel', `${monthLabel(year, month)} Sales`, `Target (${r.nextMonthTarget.pct}%)`]],
-        body: r.nextMonthTarget.channels.map((c) => [c.channel, formatMoney(c.currentSales), formatMoney(c.target)]),
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: BRAND },
-      })
-
       // ---- Footer: page numbers on every page ----
       const pageCount = doc.internal.getNumberOfPages()
       for (let i = 1; i <= pageCount; i++) {
@@ -428,9 +397,8 @@ export default function MonthEndReportTab() {
 
   const r = report
   const [prevYear, prevMonth] = previousMonthOf(year, month)
-  const [nextYear, nextMonth] = nextMonthOf(year, month)
   const salesGrowthPct = r ? pctDiff(r.current.revenue, r.previous.revenue * r.dayRatio) : null
-  const salesGrowthValue = r && r.previousMonthHasData ? r.current.revenue - r.previous.revenue : null
+  const salesGrowthValue = r && r.previousMonthHasData ? r.current.revenue - r.previous.revenue * r.dayRatio : null
 
   return (
     <div>
@@ -578,7 +546,7 @@ export default function MonthEndReportTab() {
                 {monthLabel(prevYear, prevMonth)}
               </div>
               <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.2rem' }}>
-                {r.currentDays} days vs {r.previousDays} days — growth % is day-adjusted
+                {r.currentDays} days vs {r.previousDays} days — figures above are day-adjusted
               </div>
             </div>
           )}
@@ -639,46 +607,6 @@ export default function MonthEndReportTab() {
               </li>
             )}
           </ul>
-
-          {/* ==================== NEXT MONTH TARGET ==================== */}
-          <h2>{monthLabel(nextYear, nextMonth)} Target</h2>
-          <p className="muted" style={{ fontSize: '0.85rem' }}>
-            Set at {r.nextMonthTarget.pct}% growth over {monthLabel(year, month)}'s actual sales, split across
-            channels using each channel's own {monthLabel(year, month)} sales as its base.
-          </p>
-          <div className="summary-tiles">
-            <div className="tile">
-              <div className="tile-label">{monthLabel(year, month)} Sales (Base)</div>
-              <div className="tile-value">{formatMoney(r.nextMonthTarget.currentSales)}</div>
-            </div>
-            <div className="tile">
-              <div className="tile-label">Target ({r.nextMonthTarget.pct}%)</div>
-              <div className="tile-value">{formatMoney(r.nextMonthTarget.target)}</div>
-            </div>
-          </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Channel</th>
-                <th>{monthLabel(year, month)} Sales</th>
-                <th>Target ({r.nextMonthTarget.pct}%)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.nextMonthTarget.channels.map((c) => (
-                <tr key={c.channel}>
-                  <td>{c.channel}</td>
-                  <td>{formatMoney(c.currentSales)}</td>
-                  <td>{formatMoney(c.target)}</td>
-                </tr>
-              ))}
-              {r.nextMonthTarget.channels.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="muted">No channel sales this month to base a target on.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
 
           <div className="invoice-footer">
             <p className="muted">This report is confidential and prepared for internal management and stakeholder review.</p>
